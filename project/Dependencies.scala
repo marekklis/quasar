@@ -98,7 +98,10 @@ object Dependencies {
         .exclude("io.netty", "netty")
         .excludeAll(ExclusionRule(organization = "javax.servlet")) % buildSparkScope
   
-  def sparkcore = Seq(sparkDep)
+  def sparkcore = Seq(sparkDep,
+    "org.apache.spark" %% "spark-sql" % "2.0.1" % buildSparkScope,
+    "com.datastax.spark" %% "spark-cassandra-connector" % "2.0.0-M3"
+    )
 
   def marklogicValidation = Seq(
     "eu.timepit" %% "refined" %  refinedVersion
