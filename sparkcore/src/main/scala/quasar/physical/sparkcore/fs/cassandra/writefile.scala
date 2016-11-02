@@ -18,13 +18,15 @@ package quasar.physical.sparkcore.fs.cassandra
 
 import quasar.Predef._
 import quasar.contrib.pathy._
-import quasar.Data
+import quasar.{Data, DataCodec, DataEncodingError}
 import quasar.effect._
-import quasar.fs._, WriteFile._
+import quasar.fs._, WriteFile._, FileSystemError._
 
 import org.apache.spark.SparkContext
 import com.datastax.driver.core.Session
 import com.datastax.spark.connector.cql.CassandraConnector
+import com.datastax.spark.connector._
+import com.datastax.driver.core.utils.UUIDs
 import pathy.Path.{ fileParent, posixCodec }
 import scalaz._, Scalaz._
 
@@ -89,7 +91,28 @@ object writefile {
     session.execute(s"CREATE TABLE $keyspace.$table (id timeuuid PRIMARY KEY, data text);")
   }
 
-  def write(handle: WriteHandle, data: Vector[Data]) = ???
+  private def insertData(keyspace: String, table: String, data: String)(implicit session: Session) = {
+    val stmt = session.prepare(s"INSERT INTO $keyspace.$table (id, data) VALUES (now(),  ?);")
+    session.execute(stmt.bind(data))
+  }
+
+  def write[S[_]](handle: WriteHandle, data: Vector[Data])(implicit
+    read: Read.Ops[SparkContext, S]
+    ): Free[S, Vector[FileSystemError]] = 
+  read.asks{ sc =>
+    implicit val codec = DataCodec.Precise
+    val textChunk: Vector[(DataEncodingError \/ String, Data)] = data.map(d => (DataCodec.render(d), d))
+      //.map{case (\/-(text), d) => \/-((UUIDs.timeBased(), text))}
+    
+    val rddChunk = sc.parallelize(textChunk)
+
+    \/.fromTryCatchNonFatal{
+      rddChunk.saveToCassandra(keyspace(handle.file), tableName(handle.file), SomeColumns("id", "data"))
+    }.fold(
+      ex => Vector(writeFailed(ex.getMessage)),
+      u => Vector.empty[FileSystemError]
+    )
+  }
 
   def close[S[_]](handle: WriteHandle): Free[S, Unit] = ().point[Free[S, ?]]
 }
