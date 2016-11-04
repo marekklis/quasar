@@ -41,7 +41,7 @@ object managefile {
 				case Move(DirToDir(src, dst), _) => dirToDir
 				case Move(FileToFile(src, dst), _) => fileToFile
 				case Delete(path) => delete(path)
-				case TempFile(near) => tempFile
+				case TempFile(near) => tempFile(near)
 			}
 		}
 
@@ -74,7 +74,22 @@ object managefile {
 			pathErr(pathNotFound(dir)).left[Unit]
 		}
 
-	def tempFile = ???
+	def tempFile[S[_]](near: APath)(implicit
+		read: Read.Ops[SparkContext, S]
+		): Free[S, FileSystemError \/ AFile] = 
+  	read.asks { sc =>
+			CassandraConnector(sc.getConf).withSessionDo { implicit session =>
+				// maybeFile(near).fold(createTempFileInDir(near))(file => createTempFileInDir(file))
+				val randomFileName = s"quasar-${scala.util.Random.nextInt()}.tmp"
+				val aDir: ADir = refineType(near).fold(d => d, fileParent(_))
+				if (!keyspaceExists(keyspace(near))) {
+					val r = createTable(keyspace(near), randomFileName)
+					(aDir </> file(randomFileName)).right[FileSystemError]
+				} else {
+					pathErr(pathNotFound(near)).left[AFile]
+				}
+			}
+		}
 
 	private def keyspace(dir: APath) =
     posixCodec.printPath(dir).substring(1).replace("/", "_")
@@ -98,5 +113,9 @@ object managefile {
 
   private def dropTable(keyspace: String, table: String)(implicit session: Session) = {
     session.execute(s"DROP TABLE $keyspace.$table;")
+  }
+
+  private def createTable(keyspace: String, table: String)(implicit session: Session) = {
+    session.execute(s"CREATE TABLE $keyspace.$table (id timeuuid PRIMARY KEY, data text);")
   }
 }
