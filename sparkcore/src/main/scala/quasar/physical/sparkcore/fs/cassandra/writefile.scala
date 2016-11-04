@@ -25,8 +25,8 @@ import quasar.fs._, WriteFile._, FileSystemError._
 import org.apache.spark.SparkContext
 import com.datastax.driver.core.Session
 import com.datastax.spark.connector.cql.CassandraConnector
-import com.datastax.spark.connector._
-import com.datastax.driver.core.utils.UUIDs
+// import com.datastax.spark.connector._
+// import com.datastax.driver.core.utils.UUIDs
 import pathy.Path.{ fileParent, posixCodec }
 import scalaz._, Scalaz._
 
@@ -102,16 +102,19 @@ object writefile {
   read.asks{ sc =>
     implicit val codec = DataCodec.Precise
     val textChunk: Vector[(DataEncodingError \/ String, Data)] = data.map(d => (DataCodec.render(d), d))
-      //.map{case (\/-(text), d) => \/-((UUIDs.timeBased(), text))}
-    
-    val rddChunk = sc.parallelize(textChunk)
-
-    \/.fromTryCatchNonFatal{
-      rddChunk.saveToCassandra(keyspace(handle.file), tableName(handle.file), SomeColumns("id", "data"))
-    }.fold(
-      ex => Vector(writeFailed(ex.getMessage)),
-      u => Vector.empty[FileSystemError]
-    )
+      
+    CassandraConnector(sc.getConf).withSessionDo {implicit session =>
+      textChunk.flatMap{
+        case (\/-(text),data) => 
+          \/.fromTryCatchNonFatal{
+            insertData(keyspace(handle.file), tableName(handle.file), text)
+          }.fold(
+            ex => Vector(writeFailed(data, ex.getMessage)),
+            u => Vector.empty[FileSystemError]
+          )
+        case (-\/(error), data) => Vector(writeFailed(data, error.message))
+      }
+    }
   }
 
   def close[S[_]](handle: WriteHandle): Free[S, Unit] = ().point[Free[S, ?]]
