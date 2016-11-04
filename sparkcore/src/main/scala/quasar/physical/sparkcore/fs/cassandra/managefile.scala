@@ -79,7 +79,6 @@ object managefile {
 		): Free[S, FileSystemError \/ AFile] = 
   	read.asks { sc =>
 			CassandraConnector(sc.getConf).withSessionDo { implicit session =>
-				// maybeFile(near).fold(createTempFileInDir(near))(file => createTempFileInDir(file))
 				val randomFileName = s"quasar-${scala.util.Random.nextInt()}.tmp"
 				val aDir: ADir = refineType(near).fold(d => d, fileParent(_))
 				if (!keyspaceExists(keyspace(near))) {

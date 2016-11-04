@@ -25,8 +25,6 @@ import quasar.fs._, WriteFile._, FileSystemError._
 import org.apache.spark.SparkContext
 import com.datastax.driver.core.Session
 import com.datastax.spark.connector.cql.CassandraConnector
-// import com.datastax.spark.connector._
-// import com.datastax.driver.core.utils.UUIDs
 import pathy.Path.{ fileParent, posixCodec }
 import scalaz._, Scalaz._
 
