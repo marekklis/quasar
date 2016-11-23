@@ -24,10 +24,12 @@ import quasar.fs._,
   FileSystemError._,
   PathError._
 import quasar.effect._
+import quasar.fs.impl.ensureMoveSemantics
 
 import org.apache.spark.SparkContext
 import com.datastax.driver.core.Session
 import com.datastax.spark.connector.cql.CassandraConnector
+import com.datastax.spark.connector._
 import pathy._, Path._
 import scalaz._, Scalaz._
 
@@ -38,16 +40,52 @@ object managefile {
 		): ManageFile ~> Free[S, ?] = 
 		new (ManageFile ~> Free[S, ?]) {
 			def apply[A](mf: ManageFile[A]): Free[S, A] = mf match {
-				case Move(DirToDir(src, dst), _) => dirToDir
-				case Move(FileToFile(src, dst), _) => fileToFile
+				case Move(FileToFile(sf, df), semantics) =>
+          (ensureMoveSemantics[Free[S, ?]](sf, df, pathExists _, semantics).toLeft(()) *>
+            moveFile(sf, df).liftM[FileSystemErrT]).run
+        case Move(DirToDir(sd, dd), semantics) =>
+          (ensureMoveSemantics[Free[S, ?]](sd, dd, pathExists _, semantics).toLeft(()) *>
+            moveDir(sd, dd).liftM[FileSystemErrT]).run
 				case Delete(path) => delete(path)
 				case TempFile(near) => tempFile(near)
 			}
 		}
 
-	def dirToDir = ???
+	def pathExists[S[_]](path: APath)(implicit 
+		read: Read.Ops[SparkContext, S]
+		): Free[S, Boolean] = 
+		read.asks { sc =>
+			CassandraConnector(sc.getConf).withSessionDo { implicit session =>
+				maybeFile(path)
+					.fold(keyspaceExists(keyspace(path)))(file => tableExists(keyspace(fileParent(file)), tableName(file)))
+		}
+	}
 
-	def fileToFile = ???
+	def moveFile[S[_]](sf: AFile, df: AFile)(implicit 
+		read: Read.Ops[SparkContext, S]
+		): Free[S, Unit] = {
+		read.asks { implicit sc =>
+			moveTable(sf, df)
+		}
+	}
+
+	private def moveTable(sf: AFile, df: AFile)(implicit sc: SparkContext) = {
+		sc.cassandraTable(keyspace(fileParent(sf)), tableName(sf))
+			.saveToCassandra(keyspace(fileParent(df)), tableName(df), SomeColumns("id", "data"))
+		CassandraConnector(sc.getConf).withSessionDo { implicit session =>
+			val r = dropTable(keyspace(fileParent(sf)), tableName(sf))
+		}
+	}
+
+	def moveDir[S[_]](sd: ADir, dd: ADir)(implicit 
+		read: Read.Ops[SparkContext, S]
+		): Free[S, Unit] = {
+		read.asks { implicit sc =>
+			sc.cassandraTable[String]("system_schema", "tables").select("table_name").foreach {tn: String=>
+				moveTable(sd </> file(tn), dd </> file(tn))
+			}
+		}
+	}
 
 	def delete[S[_]](path: APath)(implicit
 		read: Read.Ops[SparkContext, S]
