@@ -18,7 +18,8 @@ package quasar.fs
 
 import scala.Predef.$conforms
 import quasar.Predef._
-import quasar.{Data, DataArbitrary, LogicalPlan, PhaseResults}
+import quasar.{Data, DataArbitrary}
+import quasar.common.PhaseResults
 import quasar.contrib.pathy._
 import quasar.fp._, eitherT._
 import quasar.scalacheck._
@@ -31,6 +32,7 @@ import scalaz.scalacheck.ScalazArbitrary._
 class QueryFileSpec extends quasar.Qspec with FileSystemFixture {
   import InMemory._, FileSystemError._, PathError._, DataArbitrary._
   import query._, transforms.ExecM
+  import quasar.frontend.fixpoint.lpf
 
   "QueryFile" should {
     "descendantFiles" >> {
@@ -75,7 +77,7 @@ class QueryFileSpec extends quasar.Qspec with FileSystemFixture {
 
     "evaluate" >> {
       "streams the results of evaluating the logical plan" >> prop { s: SingleFileMemState =>
-        val query = LogicalPlan.Read(s.file)
+        val query = lpf.read(s.file)
         val state = s.state.copy(queryResps = Map(query -> s.contents))
         val result = MemTask.runLogWE[FileSystemError, PhaseResults, Data](evaluate(query)).run.run.eval(state)
         result.unsafePerformSync._2.toEither must beRight(s.contents)
@@ -86,7 +88,7 @@ class QueryFileSpec extends quasar.Qspec with FileSystemFixture {
       "streams results until an empty vector is received" >> prop {
         s: SingleFileMemState =>
 
-        val query = LogicalPlan.Read(s.file)
+        val query = lpf.read(s.file)
         val state = s.state.copy(queryResps = Map(query -> s.contents))
         val result = MemTask.interpret(enumerate(query).drainTo[Vector].run.value)
 
@@ -99,7 +101,7 @@ class QueryFileSpec extends quasar.Qspec with FileSystemFixture {
         s: SingleFileMemState =>
 
         val n = s.contents.length / 2
-        val query = LogicalPlan.Read(s.file)
+        val query = lpf.read(s.file)
         val state = s.state.copy(queryResps = Map(query -> s.contents))
         val result = MemTask.interpret(
           enumeratee.take[Data, ExecM](n)

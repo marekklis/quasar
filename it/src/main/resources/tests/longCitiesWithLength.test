@@ -2,18 +2,17 @@
     "name": "long city names in Colorado",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "largeZips.data",
-    "query": "select distinct city, length(city) from largeZips where state=\"CO\" and length(city) >= 10",
+    "query": "select distinct city, length(city) as len from largeZips where state=\"CO\" and length(city) >= 10",
     "predicate": "containsAtLeast",
-    "expected": [{ "city": "GRAND LAKE",       "1": 10 },
-                 { "city": "MONTE VISTA",      "1": 11 },
-                 { "city": "FORT GARLAND",     "1": 12 },
-                 { "city": "CRESTED BUTTE",    "1": 13 },
-                 { "city": "PAGOSA SPRINGS",   "1": 14 },
-                 { "city": "MANITOU SPRINGS",  "1": 15 },
-                 { "city": "RED FEATHER LAKE", "1": 16 }]
+    "ignoreFieldOrder": [ "couchbase" ],
+    "expected": [{ "city": "GRAND LAKE",       "len": 10 },
+                 { "city": "MONTE VISTA",      "len": 11 },
+                 { "city": "FORT GARLAND",     "len": 12 },
+                 { "city": "CRESTED BUTTE",    "len": 13 },
+                 { "city": "PAGOSA SPRINGS",   "len": 14 },
+                 { "city": "MANITOU SPRINGS",  "len": 15 },
+                 { "city": "RED FEATHER LAKE", "len": 16 }]
 }

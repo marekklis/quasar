@@ -1,0 +1,1 @@
+- Couchbase: Enable additional query integration tests

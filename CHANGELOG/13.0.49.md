@@ -1,0 +1,1 @@
+- [1706] Make an array when a projection results in multiple items.

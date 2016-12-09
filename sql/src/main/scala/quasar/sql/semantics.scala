@@ -80,7 +80,7 @@ object SemanticAnalysis {
           } (
             kExpr => (projs, (orderType, kExpr) :: keys, index))
       }
-      select(d, projections ⊹ projs2, r, f, g, OrderBy(keys2).some).some
+      select(d, projections ⊹ projs2, r, f, g, keys2.toNel map (OrderBy(_))).some
     }
     case _ => None
   }

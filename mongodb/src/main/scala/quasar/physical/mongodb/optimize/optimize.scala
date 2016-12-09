@@ -84,7 +84,7 @@ package object optimize {
       * without those fields followed by a \$project that projects those fields
       * from the key.
       */
-    def simplifyGroupƒ[F[_]: Coalesce](implicit ev: WorkflowOpCoreF :<: F):
+    private def simplifyGroupƒ[F[_]: Coalesce](implicit ev: WorkflowOpCoreF :<: F):
         F[Fix[F]] => Option[F[Fix[F]]] = {
       case $group(src, Grouped(cont), id) =>
         val (newCont, proj) =
@@ -119,6 +119,9 @@ package object optimize {
               IgnoreId)).unFix.some
       case _ => None
     }
+
+    def simplifyGroup[F[_]: Coalesce: Functor](op: Fix[F])(implicit ev: WorkflowOpCoreF :<: F): Fix[F] =
+      op.transCata(orOriginal(simplifyGroupƒ[F]))
 
     private def reorderOpsƒ[F[_]: Coalesce](implicit I: WorkflowOpCoreF :<: F)
         : F[Fix[F]] => Option[F[Fix[F]]] = {

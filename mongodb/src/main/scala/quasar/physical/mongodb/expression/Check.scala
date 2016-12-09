@@ -22,7 +22,7 @@ import quasar.fp._
 import quasar.physical.mongodb.Bson
 
 import matryoshka._
-import org.threeten.bp.{Instant}
+import java.time.{Instant}
 import scalaz._, Scalaz._
 
 /** Runtime type checks, exploiting MongoDB's total ordering for Bson values,

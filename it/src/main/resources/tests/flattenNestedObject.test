@@ -2,8 +2,7 @@
     "name": "flatten an object inside a field projection",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "slamengine_commits.data",
     "query": "select commit.author{*} from slamengine_commits",

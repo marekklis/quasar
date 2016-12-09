@@ -2,18 +2,16 @@
   "name": "count distinct",
 
   "backends": {
-    "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "postgresql": "pending"
   },
 
   "data": "olympics.data",
 
-  "query": "select count(distinct sport) from olympics",
+  "query": "select count(distinct sport) as cnt from olympics",
 
   "predicate": "equalsExactly",
 
   "expected": [
-    { "0": 7 }
+    { "cnt": 7 }
   ]
 }

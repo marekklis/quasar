@@ -1,21 +1,20 @@
 {
     "name": "concat BETWEEN with other fields",
     "backends": {
-        "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "postgresql": "pending"
     },
-    "data": "zips.data",
-    "query": "select city, pop, pop between 1000 and 10000 from zips",
+    "data": "smallZips.data",
+    "query": "select city, pop, pop between 1000 and 10000 as midsized from smallZips",
     "predicate": "containsAtLeast",
-    "expected": [{ "city": "AGAWAM",       "pop": 15338, "2": false },
-                 { "city": "CUSHMAN",      "pop": 36963, "2": false },
-                 { "city": "BARRE",        "pop": 4546,  "2": true  },
-                 { "city": "BELCHERTOWN",  "pop": 10579, "2": false },
-                 { "city": "BLANDFORD",    "pop": 1240,  "2": true  },
-                 { "city": "BRIMFIELD",    "pop": 3706,  "2": true  },
-                 { "city": "CHESTER",      "pop": 1688,  "2": true  },
-                 { "city": "CHESTERFIELD", "pop": 177,   "2": false },
-                 { "city": "CHICOPEE",     "pop": 23396, "2": false },
-                 { "city": "CHICOPEE",     "pop": 31495, "2": false }]
+    "ignoreFieldOrder": [ "couchbase" ],
+    "expected": [{ "city": "AGAWAM",       "pop": 15338, "midsized": false },
+                 { "city": "CUSHMAN",      "pop": 36963, "midsized": false },
+                 { "city": "BARRE",        "pop": 4546,  "midsized": true  },
+                 { "city": "BELCHERTOWN",  "pop": 10579, "midsized": false },
+                 { "city": "BLANDFORD",    "pop": 1240,  "midsized": true  },
+                 { "city": "BRIMFIELD",    "pop": 3706,  "midsized": true  },
+                 { "city": "CHESTER",      "pop": 1688,  "midsized": true  },
+                 { "city": "CHESTERFIELD", "pop": 177,   "midsized": false },
+                 { "city": "CHICOPEE",     "pop": 23396, "midsized": false },
+                 { "city": "CHICOPEE",     "pop": 31495, "midsized": false }]
 }

@@ -2,8 +2,7 @@
     "name": "concat known array structure",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "largeZips.data",
     "query": "select [ city, pop ] as cp from largeZips",

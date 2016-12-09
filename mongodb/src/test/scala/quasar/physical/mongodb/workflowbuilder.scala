@@ -18,13 +18,13 @@ package quasar.physical.mongodb
 
 import quasar.Predef._
 import quasar._, Planner._
+import quasar.common.SortDir
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.javascript._
 import quasar.physical.mongodb.accumulator._
 import quasar.physical.mongodb.expression._
 import quasar.physical.mongodb.workflow._
-import quasar.qscript.SortDir
 
 import matryoshka._, FunctorT.ops._, Recursive.ops._
 import scalaz._, Scalaz._
@@ -141,7 +141,7 @@ class WorkflowBuilderSpec extends quasar.Qspec {
       } yield state2).evalZero
 
       op must beLeftDisjunction(UnsupportedFunction(
-        quasar.std.StdLib.structural.ArrayProject.name,
+        quasar.std.StdLib.structural.ArrayProject,
         Some("array does not contain index ‘2’.")))
     }
 

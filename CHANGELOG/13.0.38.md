@@ -1,0 +1,1 @@
+Faster default implementation of `KeyValueStore`

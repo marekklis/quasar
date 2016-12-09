@@ -1,0 +1,3 @@
+- Treat strings as arrays for purposes for concatenation in MarkLogic
+  - [1503] Allow array operations to work on any XML element
+  - Enable all StdLib tests for MarkLogic and add new ones for ArrayConcat

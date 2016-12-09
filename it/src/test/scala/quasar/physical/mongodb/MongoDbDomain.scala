@@ -17,8 +17,9 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.std.StdLibTestRunner.genPrintableAscii
 
-import org.scalacheck.{Arbitrary, Gen}, Arbitrary._
+import org.scalacheck.Arbitrary._
 import scalaz._, Scalaz._
 
 /** Defines the domains of values for which the MongoDb connector is expected
@@ -33,5 +34,5 @@ trait MongoDbDomain {
 
   // NB: restricted to printable ASCII only because most functions are not
   // well-defined for the rest (e.g. $toLower, $toUpper, $substr)
-  val stringDomain = Gen.listOf(Gen.choose('\u0020', '\u007e')).map(_.mkString)
+  val stringDomain = genPrintableAscii
 }

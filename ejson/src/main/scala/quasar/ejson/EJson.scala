@@ -90,6 +90,12 @@ object Obj {
       def apply[α](eq: Equal[α]) = Equal.equal((a, b) =>
         mapEqual(stringInstance, eq).equal(a.value, b.value))
     }
+
+  implicit val show: Delay[Show, Obj] =
+    new Delay[Show, Obj] {
+      def apply[α](shw: Show[α]) = Show.show(a =>
+        mapShow(stringInstance, shw).show(a.value))
+    }
 }
 
 /** This is an extension to JSON that allows arbitrary expressions as map (née

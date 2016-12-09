@@ -44,7 +44,7 @@ trait TTypes[T[_[_]]] {
 }
 
 object TTypes {
-  def simplifiableProjection[T[_[_]]]                                  = new SimplifiableProjectionT[T]
+  def simplifiableProjection[T[_[_]]] = new SimplifiableProjectionT[T]
 }
 
 class SimplifiableProjectionT[T[_[_]]] extends TTypes[T] {

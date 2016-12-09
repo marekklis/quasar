@@ -1,0 +1,1 @@
+- Relocate the jawn-based ejson.Json parser to ejson package

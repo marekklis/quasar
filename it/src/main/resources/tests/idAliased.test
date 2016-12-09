@@ -2,9 +2,7 @@
   "name": "select _id as zip",
 
   "backends": {
-    "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "postgresql": "pending"
   },
 
   "data": "zips.data",

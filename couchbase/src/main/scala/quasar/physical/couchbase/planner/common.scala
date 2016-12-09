@@ -17,25 +17,24 @@
 package quasar.physical.couchbase.planner
 
 import quasar.Predef._
-import quasar.PlannerErrT
+import quasar.connector.PlannerErrT
 import quasar.contrib.pathy._
 import quasar.physical.couchbase, couchbase._
 import quasar.physical.couchbase.N1QL.{Read => _, _}
 import quasar.Planner.PlannerError
-import quasar.qscript.{IdStatus, IncludeId, ExcludeId}
+import quasar.qscript.{IdStatus, IdOnly, IncludeId, ExcludeId}
 
-import matryoshka._
 import scalaz._, Scalaz._
 
 object common {
   def readPath[F[_]: Applicative](path: APath, idStatus: IdStatus): PlannerErrT[F, N1QL] =
     EitherT(
-      couchbase.common.bucketCollectionFromPath(path).bimap[PlannerError, N1QL](
-        // TODO: Improve error handling
-        err => quasar.Planner.InternalError(err.shows),
+      couchbase.common.BucketCollection.fromPath(path).bimap[PlannerError, N1QL](
+        quasar.Planner.PlanPathError(_),
         bc => {
           val v = "ifmissing(v.`value`, v)"
           val r = idStatus match {
+            case IdOnly    => "meta(v).id"
             case IncludeId => "[meta(v).id, ifmissing(v.`value`, v)]"
             case ExcludeId => v
           }

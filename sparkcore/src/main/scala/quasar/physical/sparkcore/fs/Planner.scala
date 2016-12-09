@@ -18,12 +18,16 @@ package quasar.physical.sparkcore.fs
 
 import quasar.Predef._
 import quasar._, quasar.Planner._
+import quasar.common.SortDir
 import quasar.contrib.matryoshka._
 import quasar.contrib.pathy.AFile
 import quasar.fp.ski._
 import quasar.qscript._
 import quasar.contrib.pathy.AFile
 import quasar.qscript.ReduceFuncs._
+
+import scala.math.{Ordering => SOrdering}
+import SOrdering.Implicits._
 
 import org.apache.spark._
 import org.apache.spark.rdd._
@@ -38,13 +42,43 @@ import simulacrum.typeclass
   def plan(fromFile: (SparkContext, AFile) => Task[RDD[String]]): AlgebraM[Planner.SparkState, F, RDD[Data]]
 }
 
+// TODO divide planner instances into separate files
 object Planner {
+
+  // TODO consider moving to data.scala (conflicts with existing code)
+  implicit def dataOrder: Order[Data] = new Order[Data] with Serializable {
+    def order(d1: Data, d2: Data) = (d1, d2) match {
+      case Data.Null -> Data.Null                 => Ordering.EQ
+      case Data.Str(a) -> Data.Str(b)             => a cmp b
+      case Data.Bool(a) -> Data.Bool(b)           => a cmp b
+      case Data.Number(a) -> Data.Number(b)       => a cmp b
+      case Data.Obj(a) -> Data.Obj(b)             => a.toList cmp b.toList
+      case Data.Arr(a) -> Data.Arr(b)             => a cmp b
+      case Data.Set(a) -> Data.Set(b)             => a cmp b
+      case Data.Timestamp(a) -> Data.Timestamp(b) => Ordering fromInt (a compareTo b)
+      case Data.Date(a) -> Data.Date(b)           => Ordering fromInt (a compareTo b)
+      case Data.Time(a) -> Data.Time(b)           => Ordering fromInt (a compareTo b)
+      case Data.Interval(a) -> Data.Interval(b)   => Ordering fromInt (a compareTo b)
+      case Data.Binary(a) -> Data.Binary(b)       => a.toArray.toList cmp b.toArray.toList
+      case Data.Id(a) -> Data.Id(b)               => a cmp b
+      case Data.NA -> Data.NA                 => Ordering.EQ
+      case a -> b                       => a.getClass.## cmp b.getClass.##
+    }
+  }
+
+  /*
+   * Copy-paste from scalaz's `toScalaOrdering`
+   * Copied because scalaz's ListInstances are not Serializable
+   */
+  implicit val ord: SOrdering[Data] = new SOrdering[Data] {
+    def compare(x: Data, y: Data) = dataOrder.order(x, y).toInt
+  }
 
   type SparkState[A] = StateT[EitherT[Task, PlannerError, ?], SparkContext, A]
   type SparkStateT[F[_], A] = StateT[F, SparkContext, A]
 
   def unimplemented(what: String): SparkState[RDD[Data]] =
-    EitherT[Task, PlannerError, RDD[Data]](InternalError(s"unimplemented $what").left[RDD[Data]].point[Task]).liftM[StateT[?[_], SparkContext, ?]]
+    EitherT[Task, PlannerError, RDD[Data]](InternalError.fromMsg(s"unimplemented $what").left[RDD[Data]].point[Task]).liftM[StateT[?[_], SparkContext, ?]]
 
   type Aux[T[_[_]], F[_]] = Planner[F] { type IT[G[_]] = T[G] }
 
@@ -53,7 +87,7 @@ object Planner {
       type IT[G[_]] = T[G]
       def plan(fromFile: (SparkContext, AFile) => Task[RDD[String]]): AlgebraM[SparkState, F, RDD[Data]] =
         _ =>  StateT((sc: SparkContext) => {
-        EitherT(InternalError(s"unreachable $what").left[(SparkContext, RDD[Data])].point[Task])
+        EitherT(InternalError.fromMsg(s"unreachable $what").left[(SparkContext, RDD[Data])].point[Task])
       })
     }
 
@@ -75,11 +109,14 @@ object Planner {
               val rdd = initRDD.map { raw =>
                 DataCodec.parse(raw)(DataCodec.Precise).fold(error => Data.NA, ι)
               }
-              if(idStatus === IncludeId) {
-                (sc, rdd.zipWithIndex.map {
-                  case (d, idx) => Data.Arr(List(Data.Int(idx), d)) : Data
+              (sc,
+                idStatus match {
+                  case IdOnly => rdd.zipWithIndex.map[Data](p => Data.Int(p._2))
+                  case IncludeId =>
+                    rdd.zipWithIndex.map[Data](p =>
+                      Data.Arr(List(Data.Int(p._2), p._1)))
+                  case ExcludeId => rdd
                 }).right[PlannerError]
-              } else (sc, rdd).right[PlannerError]
             })
           })
         }
@@ -109,8 +146,8 @@ object Planner {
 
         val countEval: SparkState[Long] = countState >>= (rdd => EitherT(Task.delay(rdd.first match {
           case Data.Int(v) if v.isValidLong => v.toLong.right[PlannerError]
-          case Data.Int(v) => InternalError(s"Provided Integer $v is not a Long").left[Long]
-          case a => InternalError(s"$a is not a Long number").left[Long]
+          case Data.Int(v) => InternalError.fromMsg(s"Provided Integer $v is not a Long").left[Long]
+          case a => InternalError.fromMsg(s"$a is not a Long number").left[Long]
         })).liftM[StateT[?[_], SparkContext, ?]])
         (fromState |@| countEval)((rdd, count) =>
           rdd.zipWithIndex.filter(di => predicate(di._2, count)).map(_._1))
@@ -138,7 +175,10 @@ object Planner {
           case (Data.Str(a), Data.Str(b)) => Data.Str(a) // TODO fix this
           case _ => Data.NA
         }
-        case Avg(_) => ??? // TODO implement avg
+        case Avg(_) => (d1: Data, d2: Data) => (d1, d2) match {
+          case (Data.Arr(List(Data.Dec(s1), Data.Int(c1))), Data.Arr(List(Data.Dec(s2), Data.Int(c2)))) =>
+            Data.Arr(List(Data.Dec(s1 + s2), Data.Int(c1 + c2)))
+        }
         case Arbitrary(_) => (d1: Data, d2: Data) => d1
         case UnshiftArray(a) => (d1: Data, d2: Data) => (d1, d2) match {
           case (Data.Arr(a), Data.Arr(b)) => Data.Arr(a ++ b)
@@ -173,7 +213,11 @@ object Planner {
             case Sum(a) => a
             case Min(a) => a
             case Max(a) => a
-            case Avg(a) => a
+            case Avg(a) => a >>> {
+              case Data.Int(v) => Data.Arr(List(Data.Dec(BigDecimal(v)), Data.Int(1)))
+              case Data.Dec(v) => Data.Arr(List(Data.Dec(v), Data.Int(1)))
+              case _ => Data.NA
+            }
             case Arbitrary(a) => a
             case UnshiftArray(a) => a >>> ((d: Data) => Data.Arr(List(d)))
             case UnshiftMap(a1, a2) => ((d: Data) => a1(d) match {
@@ -209,12 +253,34 @@ object Planner {
                 src.map(d => (partitioner(d), Data.Arr(trans.map(_(d))) : Data))
                   .reduceByKey(merge(_,_, reducersFuncs))
                   .map {
-                  case (k, v) => repair(v)
+                  case (k, Data.Arr(vs)) =>
+                    val v = Zip[List].zipWith(vs, reducers) {
+                      case (Data.Arr(List(Data.Dec(sum), Data.Int(count))), Avg(_)) => Data.Dec(sum / BigDecimal(count))
+                      case (d, _) => d
+                    }
+                    repair(Data.Arr(v))
+                  case (_, _) => Data.NA
                 }
             }).map((sc, _)).point[Task])
           )
-        case Sort(src, bucket, order) =>
-          unimplemented("sort")
+        case Sort(src, bucket, orders) =>
+
+          val maybeSortBys: PlannerError \/ NonEmptyList[(Data => Data, SortDir)] =
+            orders.traverse {
+              case (freemap, sdir) =>
+                freeCataM(freemap)(interpretM(κ(ι[Data].right[PlannerError]), CoreMap.change)).map((_, sdir))
+            }
+
+          val maybeBucket =
+            freeCataM(bucket)(interpretM(κ(ι[Data].right[PlannerError]), CoreMap.change))
+
+          EitherT((maybeBucket |@| maybeSortBys) {
+            case (bucket, sortBys) =>
+              val asc  = sortBys.head._2 === SortDir.Ascending
+              val keys = bucket :: sortBys.map(_._1).toList
+              src.sortBy(d => keys.map(_(d)), asc)
+          }.point[Task]).liftM[SparkStateT]
+
         case Filter(src, f) =>
           StateT((sc: SparkContext) =>
             EitherT {
@@ -237,7 +303,7 @@ object Planner {
               case Sample => (i: Index, c: Count) => i < c
             })
 
-        case LeftShift(src, struct, repair) =>
+        case LeftShift(src, struct, id, repair) =>
 
           val structFunc: PlannerError \/ (Data => Data) =
             freeCataM(struct)(interpretM(κ(ι[Data].right[PlannerError]), CoreMap.change))
@@ -260,10 +326,18 @@ object Planner {
 
           StateT((sc: SparkContext) =>
             EitherT((structFunc ⊛ repairFunc)((df, rf) =>
-              src.flatMap((input: Data) => df(input) match {
-                case Data.Arr(list) => list.map(rf(input, _))
-                case Data.Obj(m) => m.values.map(rf(input, _))
-                case _ => List.empty[Data]
+              src.flatMap((input: Data) => (df(input), id) match {
+                case (Data.Arr(list), ExcludeId) => list.map(rf(input, _))
+                case (Data.Arr(list), IncludeId) =>
+                  list.zipWithIndex.map(p => rf(input, Data.Arr(List(Data.Int(p._2), p._1))))
+                case (Data.Arr(list), IdOnly) =>
+                  list.indices.map(i => rf(input, Data.Int(i)))
+                case (Data.Obj(m), ExcludeId) => m.values.map(rf(input, _))
+                case (Data.Obj(m), IncludeId) =>
+                  m.map(p => Data.Arr(List(Data.Str(p._1), p._2)))
+                case (Data.Obj(m), IdOnly) =>
+                  m.keys.map(k => rf(input, Data.Str(k)))
+                case (_, _) => List.empty[Data]
               })).map((sc, _)).point[Task]))
 
         case Union(src, lBranch, rBranch) =>

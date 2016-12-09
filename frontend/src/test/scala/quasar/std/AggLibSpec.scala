@@ -21,7 +21,7 @@ import quasar.Predef._
 import quasar.{Data, Func, Type}
 import quasar.DataArbitrary, DataArbitrary._
 
-import org.threeten.bp.Duration
+import java.time.Duration
 import scalaz.scalacheck.ScalazArbitrary._
 import scalaz.NonEmptyList
 import scalaz.std.anyVal._

@@ -49,12 +49,13 @@ object RegressionTest {
       query            <- (c --\ "query").as[String]
       variables        <- orElse(c --\ "variables", Map.empty[String, String])
       ignoredFields    <- orElse(c --\ "ignoredFields", List.empty[String])
-      ignoreFieldOrder <- orElse(c --\ "ignoreFieldOrder", false)
+      ignoreFieldOrder <- orElse(c --\ "ignoreFieldOrder", List.empty[String]).map {
+                            case v if v.contains("*") => IgnoreFieldOrderAllBackends
+                            case v => IgnoreFieldOrderBackends(v ∘ BackendName.apply)
+                          }
       rows             <- (c --\ "expected").as[List[Json]]
       predicate        <- (c --\ "predicate").as[Predicate]
     } yield RegressionTest(
       name, backends, data, query, variables,
-      ExpectedResult(
-        rows, predicate, ignoredFields,
-        ignoreFieldOrder.fold(FieldOrderIgnored, FieldOrderPreserved))))
+      ExpectedResult(rows, predicate, ignoredFields, ignoreFieldOrder)))
 }

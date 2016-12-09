@@ -1,0 +1,22 @@
+{
+    "name": "select wildcard and field (MongoDB)",
+    "backends": {
+        "postgresql":        "skip",
+        "marklogic":         "skip",
+        "couchbase":         "skip"
+    },
+    "data": "../largeZips.data",
+    "query": "select *, pop/1000 as popInK from `../largeZips`",
+    "predicate": "containsAtLeast",
+    "expected": [
+        {"value": {"_id": "01002", "city": "CUSHMAN",          "loc": [ -72.51565, 42.377017], "pop": 36963, "state": "MA", "popInK": 36.963}},
+        {"value": {"_id": "01020", "city": "CHICOPEE",         "loc": [-72.576142, 42.176443], "pop": 31495, "state": "MA", "popInK": 31.495}},
+        {"value": {"_id": "01040", "city": "HOLYOKE",          "loc": [-72.626193, 42.202007], "pop": 43704, "state": "MA", "popInK": 43.704}},
+        {"value": {"_id": "01060", "city": "FLORENCE",         "loc": [-72.654245, 42.324662], "pop": 27939, "state": "MA", "popInK": 27.939}},
+        {"value": {"_id": "01085", "city": "MONTGOMERY",       "loc": [-72.754318, 42.129484], "pop": 40117, "state": "MA", "popInK": 40.117}},
+        {"value": {"_id": "01089", "city": "WEST SPRINGFIELD", "loc": [-72.641109, 42.115066], "pop": 27537, "state": "MA", "popInK": 27.537}},
+        {"value": {"_id": "01108", "city": "SPRINGFIELD",      "loc": [-72.558432, 42.085314], "pop": 25519, "state": "MA", "popInK": 25.519}},
+        {"value": {"_id": "01109", "city": "SPRINGFIELD",      "loc": [-72.554349, 42.114455], "pop": 32635, "state": "MA", "popInK": 32.635}},
+        {"value": {"_id": "01201", "city": "PITTSFIELD",       "loc": [-73.247088, 42.453086], "pop": 50655, "state": "MA", "popInK": 50.655}},
+        {"value": {"_id": "01420", "city": "FITCHBURG",        "loc": [-71.803133, 42.579563], "pop": 41194, "state": "MA", "popInK": 41.194}}]
+}

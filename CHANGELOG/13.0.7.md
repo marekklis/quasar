@@ -1,0 +1,1 @@
+- Factors out identical calls to transAna.

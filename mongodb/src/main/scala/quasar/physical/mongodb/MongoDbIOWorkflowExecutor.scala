@@ -17,14 +17,14 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.connector.{EnvironmentError, EnvErrT}
 import quasar.fp.ski._
-import quasar.{EnvironmentError, EnvErrT}
 import quasar.fs._
+import quasar.physical.mongodb.MapReduce._
 import quasar.physical.mongodb.execution._
 import quasar.physical.mongodb.mongoiterable._
 import quasar.physical.mongodb.workflow.$SortF
 import quasar.physical.mongodb.workflowtask._
-import MapReduce._
 
 import java.lang.{Boolean => JBoolean}
 import scala.Predef.classOf

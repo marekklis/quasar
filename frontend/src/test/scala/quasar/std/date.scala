@@ -18,7 +18,7 @@ package quasar.std
 
 import quasar.Predef._
 
-import org.threeten.bp._
+import java.time._
 import scalaz._
 import quasar._, SemanticError._
 

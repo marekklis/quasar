@@ -1,0 +1,1 @@
+- Use Equal for LogicalPlan in as many places as possible.

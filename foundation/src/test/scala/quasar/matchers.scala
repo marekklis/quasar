@@ -25,11 +25,22 @@ import org.specs2.matcher._
 import scalaz._, Scalaz._
 
 trait TreeMatchers {
+  // TODO remove in favor of `beTreeEqual`
+  // uses `==`
   def beTree[A: RenderTree](expected: A): Matcher[A] = new Matcher[A] {
+    def apply[S <: A](ex: Expectable[S]) = {
+      val actual: A = ex.value
+      val diff: String = (RenderTree[A].render(actual) diff expected.render).shows
+      result(actual == expected, s"trees match:\n$diff", s"trees do not match:\n$diff", ex)
+    }
+  }
+
+  // uses `scalaz.Equal`
+  def beTreeEqual[A: RenderTree: Equal](expected: A): Matcher[A] = new Matcher[A] {
     def apply[S <: A](s: Expectable[S]) = {
-      val v = s.value
+      val v: A = s.value
       val diff = (RenderTree[A].render(v) diff expected.render).shows
-      result(v == expected, s"trees match:\n$diff", s"trees do not match:\n$diff", s)
+      result(v ≟ expected, s"trees match:\n$diff", s"trees do not match:\n$diff", s)
     }
   }
 }

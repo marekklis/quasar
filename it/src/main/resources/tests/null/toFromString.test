@@ -2,12 +2,10 @@
     "name": "convert null to/from strings",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "nulls.data",
-    "query": "select null(name), to_string(val) from nulls where name = \"null\"",
+    "query": "select null(name) as n, to_string(val) as s from nulls where name = \"null\"",
     "predicate": "containsExactly",
-    "expected": [{ "0": null, "1": "null" }]
+    "expected": [{ "n": null, "s": "null" }]
 }

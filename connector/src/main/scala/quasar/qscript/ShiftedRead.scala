@@ -24,16 +24,6 @@ import monocle.macros.Lenses
 import pathy.Path._
 import scalaz._, Scalaz._
 
-sealed abstract class IdStatus
-case object IncludeId extends IdStatus
-case object ExcludeId extends IdStatus
-
-object IdStatus {
-  implicit def equal: Equal[IdStatus] = Equal.equalRef
-  implicit def show: Show[IdStatus] = Show.showFromToString
-  implicit def renderTree: RenderTree[IdStatus] = RenderTree.fromShow("IdStatus")
-}
-
 /** Similar to [[Read]], but returns a dataset with an entry for each record. If
   * `idStatus` is [[IncludeId]], then it returns a two-element array for each
   * record, with the id at element 0 and the record itself at element 1. If it’s

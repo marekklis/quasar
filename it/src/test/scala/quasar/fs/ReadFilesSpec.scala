@@ -53,7 +53,7 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
       write.appendChunked(td.file, src)
     }
 
-    List(emptyFile, smallFile, largeFile, veryLongFile)
+    List(emptyFile, smallFile, largeFile)
       .foldMap(loadDatum)(PlusEmpty[P].monoid)
       .flatMap(err => Process.fail(new RuntimeException(err.shows)))
       .translate[FsTask](runT(run))
@@ -139,15 +139,15 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
       }.set(minTestsOk = 10)
 
       "scan with offset k and limit j takes j data, starting from k" >> Prop.forAll(
-        chooseRefinedNum[Refined, Int, RPositive](1, 200),
-        chooseRefinedNum[Refined, Int, NonNegative](0, 200)
+        chooseRefinedNum[Refined, Int, RPositive](1, 50),
+        chooseRefinedNum[Refined, Int, NonNegative](0, 50)
       ) { (j: Int Refined RPositive, k: Int Refined NonNegative) =>
-        val rFull = runLogT(run, read.scan(largeFile.file, 0L, None)).run_\/
-        val r     = runLogT(run, read.scan(largeFile.file, k, Some(j))).run_\/
+        val rFull = runLogT(run, read.scan(smallFile.file, 0L, None)).run_\/
+        val r     = runLogT(run, read.scan(smallFile.file, k, Some(j))).run_\/
 
         val d = rFull.map(_.drop(k).take(j.get))
 
-        (rFull.map(_.toSet) must_= largeFile.data.toSet.right) and
+        (rFull.map(_.toSet) must_= smallFile.data.toSet.right) and
         (r must_= d)
       }.set(minTestsOk = 5)
 
@@ -165,14 +165,14 @@ class ReadFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
       }.set(minTestsOk = 10)
 
       "scan very long file is stack-safe" >> {
-        runLogT(run, read.scanAll(veryLongFile.file).foldMap(_ => 1))
-          .runEither must beRight(List(veryLongFile.data.length).toIndexedSeq)
+        runLogT(run, read.scanAll(largeFile.file).foldMap(_ => 1))
+          .runEither must beRight(List(largeFile.data.length).toIndexedSeq)
       }
 
       // TODO: This was copied from existing tests, but what is being tested?
       "scan very long file twice" >> {
-        val r = runLogT(run, read.scanAll(veryLongFile.file).foldMap(_ => 1))
-        val l = Vector(veryLongFile.data.length)
+        val r = runLogT(run, read.scanAll(largeFile.file).foldMap(_ => 1))
+        val l = Vector(largeFile.data.length)
 
         (r.run_\/ must_= l.right) and
         (r.run_\/ must_= l.right)
@@ -201,28 +201,9 @@ object ReadFilesSpec {
     readsPrefix </> file("small"),
     manyDocs(smallFileSize.toInt))
 
-  val largeFile = {
-    val sizeInMb = 10.0
-    val bytesPerDoc = 750
-    val numDocs = (sizeInMb * 1024 * 1024 / bytesPerDoc).toInt
-
-    def jsonTree(depth: Int): Data =
-      if (depth == 0)
-        Data.Arr(Data.Str("abc") :: Data.Int(123) :: Data.Str("do, re, mi") :: Nil)
-      else
-        Data.Obj(ListMap("left" -> jsonTree(depth-1), "right" -> jsonTree(depth-1)))
-
-    def json(i: Int) =
-      Data.Obj(ListMap("seq" -> Data.Int(i), "filler" -> jsonTree(3)))
-
-    TestDatum(
-      readsPrefix </> file("large"),
-      EStream.range(1, numDocs) map (json))
-  }
-
-  val veryLongFile = TestDatum(
-    readsPrefix </> dir("length") </> file("very.long"),
-    manyDocs(100000))
+  val largeFile = TestDatum(
+    readsPrefix </> dir("length") </> file("large"),
+    manyDocs(10000))
 
   ////
 

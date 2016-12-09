@@ -2,9 +2,7 @@
   "name": "constant and a grouped value",
 
   "backends": {
-    "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "postgresql": "pending"
   },
 
   "data": "zips.data",
@@ -16,6 +14,7 @@
   "query": "select :state as state, count(*) as `count` from zips where state = :state",
 
   "predicate": "containsExactly",
+  "ignoreFieldOrder": [ "couchbase" ],
   "expected": [
     { "state": "CO", "count": 414 }
   ]

@@ -4,21 +4,22 @@
   "backends": {
     "mongodb_read_only": "pending",
     "postgresql":        "pending",
-    "marklogic":         "skip",
-    "couchbase":         "skip"
+    "couchbase":         "skipCI"
   },
 
   "data": "largeZips.data",
 
   "query":
-    "select distinct city, city ~ \"OUL\", \"some text with BOULDER in it\" ~ city
+    "select distinct city, city ~ \"OUL\" as a, \"some text with BOULDER in it\" ~ city as b
       from largeZips
       where city ~ \"^B[^ ]+ER$\" and \"BOULDER or BEELER\" ~ city",
 
   "predicate": "containsExactly",
 
+  "ignoreFieldOrder": [ "couchbase" ],
+
   "expected": [
-    { "city": "BOULDER", "1": true,  "2": true  },
-    { "city": "BEELER",  "1": false, "2": false }
+    { "city": "BOULDER", "a": true,  "b": true  },
+    { "city": "BEELER",  "a": false, "b": false }
   ]
 }

@@ -19,7 +19,7 @@ package quasar.main
 import quasar._
 import quasar.Predef._
 
-import org.threeten.bp._
+import java.time._
 import scalaz._
 
 class PrettifySpecs extends quasar.Qspec {

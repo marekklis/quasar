@@ -2,8 +2,7 @@
     "name": "flatten an object resulting from an array projection",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "slamengine_commits.data",
     "query": "select parents[0]{*} as value from slamengine_commits",

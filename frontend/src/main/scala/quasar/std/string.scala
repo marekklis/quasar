@@ -17,9 +17,12 @@
 package quasar.std
 
 import quasar.Predef._
-import quasar.{Data, Func, UnaryFunc, BinaryFunc, TernaryFunc, GenericFunc, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
+import quasar.{Data, Func, UnaryFunc, BinaryFunc, TernaryFunc, Type, Mapping, SemanticError},
+  SemanticError._
 import quasar.fp._
 import quasar.fp.ski._
+import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
+
 import matryoshka._
 import scalaz._, Scalaz._, Validation.{success, failureNel}
 import shapeless.{Data => _, :: => _, _}
@@ -37,16 +40,15 @@ trait StringLib extends Library {
   // TODO: variable arity
   val Concat = BinaryFunc(
     Mapping,
-    "concat",
     "Concatenates two (or more) string values",
     Type.Str,
     Func.Input2(Type.Str, Type.Str),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeFUnapply(_, Sized(Embed(ConstantF(Data.Str(""))), Embed(second))) =>
+          case InvokeUnapply(_, Sized(Embed(Constant(Data.Str(""))), Embed(second))) =>
             second.some
-          case InvokeFUnapply(_, Sized(Embed(first), Embed(ConstantF(Data.Str(""))))) =>
+          case InvokeUnapply(_, Sized(Embed(first), Embed(Constant(Data.Str(""))))) =>
             first.some
           case _ => None
         }
@@ -83,22 +85,23 @@ trait StringLib extends Library {
     "^" + escape(pattern.toList).mkString + "$"
   }
 
+  // TODO: This is here (rather than converted to `Search` in `sql.compile`)
+  //       until we can constant-fold as we compile.
   val Like = TernaryFunc(
     Mapping,
-    "(like)",
     "Determines if a string value matches a pattern.",
     Type.Bool,
     Func.Input3(Type.Str, Type.Str, Type.Str),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeFUnapply(_, Sized(Embed(str), Embed(ConstantF(Data.Str(pat))), Embed(ConstantF(Data.Str(esc))))) =>
+          case InvokeUnapply(_, Sized(Embed(str), Embed(Constant(Data.Str(pat))), Embed(Constant(Data.Str(esc))))) =>
             if (esc.length > 1)
               None
             else
               Search(str.embed,
-                ConstantF[T[LogicalPlan]](Data.Str(regexForLikePattern(pat, esc.headOption))).embed,
-                ConstantF[T[LogicalPlan]](Data.Bool(false)).embed).some
+                constant[T[LP]](Data.Str(regexForLikePattern(pat, esc.headOption))).embed,
+                constant[T[LP]](Data.Bool(false)).embed).some
           case _ => None
         }
     },
@@ -110,7 +113,6 @@ trait StringLib extends Library {
 
   val Search = TernaryFunc(
     Mapping,
-    "search",
     "Determines if a string value matches a regular expression. If the third argument is true, then it is a case-insensitive match.",
     Type.Bool,
     Func.Input3(Type.Str, Type.Str, Type.Bool),
@@ -127,7 +129,6 @@ trait StringLib extends Library {
 
   val Length = UnaryFunc(
     Mapping,
-    "length",
     "Counts the number of characters in a string.",
     Type.Int,
     Func.Input1(Type.Str),
@@ -140,7 +141,6 @@ trait StringLib extends Library {
 
   val Lower = UnaryFunc(
     Mapping,
-    "lower",
     "Converts the string to lower case.",
     Type.Str,
     Func.Input1(Type.Str),
@@ -154,7 +154,6 @@ trait StringLib extends Library {
 
   val Upper = UnaryFunc(
     Mapping,
-    "upper",
     "Converts the string to upper case.",
     Type.Str,
     Func.Input1(Type.Str),
@@ -179,21 +178,20 @@ trait StringLib extends Library {
 
   val Substring: TernaryFunc = TernaryFunc(
     Mapping,
-    "substring",
     "Extracts a portion of the string",
     Type.Str,
     Func.Input3(Type.Str, Type.Int, Type.Int),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeFUnapply(f @ TernaryFunc(_, _, _, _, _, _, _, _), Sized(
-            Embed(ConstantF(Data.Str(str))),
-            Embed(ConstantF(Data.Int(from))),
+          case InvokeUnapply(f @ TernaryFunc(_, _, _, _, _, _, _), Sized(
+            Embed(Constant(Data.Str(str))),
+            Embed(Constant(Data.Int(from))),
             for0))
               if 0 < from =>
-            InvokeF(f, Func.Input3(
-              ConstantF[T[LogicalPlan]](Data.Str(str.substring(from.intValue))).embed,
-              ConstantF[T[LogicalPlan]](Data.Int(0)).embed,
+            Invoke(f, Func.Input3(
+              Constant[T[LP]](Data.Str(str.substring(from.intValue))).embed,
+              Constant[T[LP]](Data.Int(0)).embed,
               for0)).some
           case _ => None
         }
@@ -236,7 +234,6 @@ trait StringLib extends Library {
 
   val Boolean = UnaryFunc(
     Mapping,
-    "boolean",
     "Converts the strings “true” and “false” into boolean values. This is a partial function – arguments that don’t satisify the constraint have undefined results.",
     Type.Bool,
     Func.Input1(Type.Str),
@@ -260,7 +257,6 @@ trait StringLib extends Library {
 
   val Integer = UnaryFunc(
     Mapping,
-    "integer",
     "Converts strings containing integers into integer values. This is a partial function – arguments that don’t satisify the constraint have undefined results.",
     Type.Int,
     Func.Input1(Type.Str),
@@ -277,7 +273,6 @@ trait StringLib extends Library {
 
   val Decimal = UnaryFunc(
     Mapping,
-    "decimal",
     "Converts strings containing decimals into decimal values. This is a partial function – arguments that don’t satisify the constraint have undefined results.",
     Type.Dec,
     Func.Input1(Type.Str),
@@ -293,7 +288,6 @@ trait StringLib extends Library {
 
   val Null = UnaryFunc(
     Mapping,
-    "null",
     "Converts strings containing “null” into the null value. This is a partial function – arguments that don’t satisify the constraint have undefined results.",
     Type.Null,
     Func.Input1(Type.Str),
@@ -308,7 +302,6 @@ trait StringLib extends Library {
 
   val ToString: UnaryFunc = UnaryFunc(
     Mapping,
-    "to_string",
     "Converts any primitive type to a string.",
     Type.Str,
     Func.Input1(Type.Syntaxed),
@@ -346,17 +339,6 @@ trait StringLib extends Library {
           DateLib.Interval.tpe(Func.Input1(x)))
           .map(Func.Input1(_))
     })
-
-  def unaryFunctions: List[GenericFunc[nat._1]] =
-    Length :: Lower :: Upper ::
-    Boolean :: Integer :: Decimal ::
-    Null :: ToString :: Nil
-
-  def binaryFunctions: List[GenericFunc[nat._2]] =
-    Concat :: Nil
-
-  def ternaryFunctions: List[GenericFunc[nat._3]] =
-    Like :: Search :: Substring :: Nil
 }
 
 object StringLib extends StringLib

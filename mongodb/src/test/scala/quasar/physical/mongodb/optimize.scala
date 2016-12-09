@@ -18,64 +18,71 @@ package quasar.physical.mongodb
 
 import quasar.Predef._
 import quasar.TreeMatchers
+import quasar.common.SortDir
 import quasar.physical.mongodb.accumulator._
 import quasar.physical.mongodb.expression._
 import quasar.physical.mongodb.optimize.pipeline._
 import quasar.physical.mongodb.workflow._
-import quasar.qscript._
 
-import matryoshka._, FunctorT.ops._
 import scalaz._, Scalaz._
 
 class OptimizeSpecs extends quasar.Qspec with TreeMatchers {
   import CollectionUtil._
   import fixExprOp._
 
-  "simplifyGroupƒ" should {
+  "simplifyGroup" should {
     "elide useless reduction" in {
-      chain[Workflow](
-        $read(collection("db", "zips")),
-        $group(
-          Grouped(ListMap(
-            BsonField.Name("city") -> $last($field("city")))),
-          $field("city").right))
-        .transCata(orOriginal(simplifyGroupƒ[WorkflowF])) must
-      beTree(chain[Workflow](
-        $read(collection("db", "zips")),
-        $group(
-          Grouped(ListMap()),
-          $field("city").right),
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("city") -> $field("_id").right)),
-          IgnoreId)))
+      val op =
+        chain[Workflow](
+          $read(collection("db", "zips")),
+          $group(
+            Grouped(ListMap(
+              BsonField.Name("city") -> $last($field("city")))),
+            $field("city").right))
+
+      val exp =
+        chain[Workflow](
+          $read(collection("db", "zips")),
+          $group(
+            Grouped(ListMap()),
+            $field("city").right),
+          $project(
+            Reshape(ListMap(
+              BsonField.Name("city") -> $field("_id").right)),
+            IgnoreId))
+
+      simplifyGroup[WorkflowF](op) must beTree(exp)
     }
 
     "elide useless reduction with complex id" in {
-      chain[Workflow](
-        $read(collection("db", "zips")),
-        $group(
-          Grouped(ListMap(
-            BsonField.Name("city") -> $max($field("city")))),
-          Reshape(ListMap(
-            BsonField.Name("0") -> $field("city").right,
-            BsonField.Name("1") -> $field("state").right)).left))
-        .transCata(orOriginal(simplifyGroupƒ[WorkflowF])) must
-      beTree(chain[Workflow](
-        $read(collection("db", "zips")),
-        $group(
-          Grouped(ListMap()),
-          Reshape(ListMap(
-            BsonField.Name("0") -> $field("city").right,
-            BsonField.Name("1") -> $field("state").right)).left),
-        $project(
-          Reshape(ListMap(
-            BsonField.Name("city") -> $field("_id", "0").right)),
-          IgnoreId)))
+      val op =
+        chain[Workflow](
+          $read(collection("db", "zips")),
+          $group(
+            Grouped(ListMap(
+              BsonField.Name("city") -> $max($field("city")))),
+            Reshape(ListMap(
+              BsonField.Name("0") -> $field("city").right,
+              BsonField.Name("1") -> $field("state").right)).left))
+
+      val exp =
+        chain[Workflow](
+          $read(collection("db", "zips")),
+          $group(
+            Grouped(ListMap()),
+            Reshape(ListMap(
+              BsonField.Name("0") -> $field("city").right,
+              BsonField.Name("1") -> $field("state").right)).left),
+          $project(
+            Reshape(ListMap(
+              BsonField.Name("city") -> $field("_id", "0").right)),
+            IgnoreId))
+
+      simplifyGroup[WorkflowF](op) must beTree(exp)
     }
 
     "preserve useless-but-array-creating reduction" in {
-      val lp = chain[Workflow](
+      val op = chain[Workflow](
         $read(collection("db", "zips")),
         $group(
           Grouped(ListMap(
@@ -83,9 +90,8 @@ class OptimizeSpecs extends quasar.Qspec with TreeMatchers {
           Reshape(ListMap(
             BsonField.Name("0") -> $field("city").right)).left))
 
-      lp.transCata(orOriginal(simplifyGroupƒ[WorkflowF])) must beTree(lp)
+      simplifyGroup[WorkflowF](op) must beTree(op)
     }
-
   }
 
   "reorder" should {

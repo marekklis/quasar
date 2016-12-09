@@ -1,0 +1,4 @@
+- Finish planning the last few MapFunc nodes in MarkLogic
+  - [1502] Adds undefined repr and handles IfUndefined
+  - Leverages StaticMap and StaticArray for a modest performance increase in the presence of large synthetic structures
+  - XML-escape string literals

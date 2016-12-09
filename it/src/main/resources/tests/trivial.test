@@ -2,8 +2,7 @@
   "name": "simple read",
 
   "backends": {
-    "postgresql": "pending",
-    "marklogic":  "skip"
+    "postgresql": "pending"
   },
 
   "data": "smallZips.data",
@@ -14,7 +13,7 @@
 
   "ignoredFields": ["_id"],
 
-  "ignoreFieldOrder": true,
+  "ignoreFieldOrder": [ "couchbase" ],
 
   "expected": [
     { "city": "NEW SALEM", "loc": [-72.306241 , 42.514643], "pop": 456, "state": "MA" }

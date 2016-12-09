@@ -3,18 +3,16 @@
 
   "backends": {
       "mongodb_read_only": "pending",
-      "postgresql":        "pending",
-      "marklogic":         "skip",
-      "couchbase":         "skip"
+      "postgresql":        "pending"
   },
 
   "data": "smallZips.data",
 
-  "query": "select count(*) from smallZips where pop < 1000 and length(city) < 8",
+  "query": "select count(*) as cnt from smallZips where pop < 1000 and length(city) < 8",
 
   "predicate": "equalsExactly",
 
   "expected": [
-    { "0": 7 }
+    { "cnt": 7 }
   ]
 }

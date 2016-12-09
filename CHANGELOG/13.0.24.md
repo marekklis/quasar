@@ -1,0 +1,1 @@
+- Cover all `Extract*` `MapFuncs` in spark-core

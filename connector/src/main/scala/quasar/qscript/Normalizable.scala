@@ -17,6 +17,7 @@
 package quasar.qscript
 
 import quasar.Predef._
+import quasar.common.SortDir
 import quasar.contrib.matryoshka._
 import quasar.ejson.EJson
 import quasar.fp._
@@ -161,27 +162,21 @@ class NormalizableT[T[_[_]] : Recursive : Corecursive : EqualT : ShowT]
         }
       }
 
-      case Sort(src, bucket, order) => {
-        val orderOpt: List[Option[(FreeMap, SortDir)]] =
-          order.map {
-            _.leftMap(freeMFEq(_)) match {
-              case (Some(fm), dir) => Some((fm, dir))
-              case (_, _)          => None
-            }
-          }
+      case Sort(src, bucket, order) =>
+        val orderOpt: NonEmptyList[Option[(FreeMap, SortDir)]] =
+          order.map { case (fm, dir) => freeMFEq(fm) strengthR dir }
 
-        val orderNormOpt: Option[List[(FreeMap, SortDir)]] =
-          orderOpt.exists(_.nonEmpty).option(
-            Zip[List].zipWith(orderOpt, order)(_.getOrElse(_)))
+        val orderNormOpt: Option[NonEmptyList[(FreeMap, SortDir)]] =
+          orderOpt any (_.nonEmpty) option orderOpt.fzipWith(order)(_ | _)
 
         makeNorm(bucket, order)(freeMFEq(_), _ => orderNormOpt)(Sort(src, _, _))
-      }
-      case Map(src, f)            => freeMFEq(f).map(Map(src, _))
-      case LeftShift(src, s, r)   => makeNorm(s, r)(freeMFEq(_), freeMFEq(_))(LeftShift(src, _, _))
-      case Union(src, l, r)       => makeNorm(l, r)(freeTCEq(_), freeTCEq(_))(Union(src, _, _))
-      case Filter(src, f)         => freeMFEq(f).map(Filter(src, _))
+
+      case Map(src, f)             => freeMFEq(f).map(Map(src, _))
+      case LeftShift(src, s, i, r) => makeNorm(s, r)(freeMFEq(_), freeMFEq(_))(LeftShift(src, _, i, _))
+      case Union(src, l, r)        => makeNorm(l, r)(freeTCEq(_), freeTCEq(_))(Union(src, _, _))
+      case Filter(src, f)          => freeMFEq(f).map(Filter(src, _))
       case Subset(src, from, sel, count) => makeNorm(from, count)(freeTCEq(_), freeTCEq(_))(Subset(src, _, sel, _))
-      case Unreferenced()         => None
+      case Unreferenced()          => None
     })
   }
 

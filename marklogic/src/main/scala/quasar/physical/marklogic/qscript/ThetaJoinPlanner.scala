@@ -16,9 +16,6 @@
 
 package quasar.physical.marklogic.qscript
 
-import quasar.Predef.{Map => _, _}
-import quasar.NameGenerator
-import quasar.contrib.matryoshka.ShowT
 import quasar.physical.marklogic.xquery._
 import quasar.physical.marklogic.xquery.syntax._
 import quasar.qscript._
@@ -26,21 +23,23 @@ import quasar.qscript._
 import matryoshka._
 import scalaz._, Scalaz._
 
-private[qscript] final class ThetaJoinPlanner[F[_]: NameGenerator: PrologW: MonadPlanErr, T[_[_]]: Recursive: ShowT]
+private[qscript] final class ThetaJoinPlanner[F[_]: QNameGenerator: PrologW: MonadPlanErr, T[_[_]]: Recursive: Corecursive]
   extends MarkLogicPlanner[F, ThetaJoin[T, ?]] {
-  import expr.{for_, let_}
+  import expr.let_
 
   // FIXME: Handle `JoinType`
+  // TODO:  When `src` is unreferenced, should be able to elide the outer `let`,
+  //        may also be able to fuse into a single FLWOR depending on branches.
   val plan: AlgebraM[F, ThetaJoin[T, ?], XQuery] = {
     case ThetaJoin(src, lBranch, rBranch, on, f, combine) =>
       for {
-        l      <- freshVar[F]
-        r      <- freshVar[F]
-        s      <- freshVar[F]
-        lhs    <- rebaseXQuery(lBranch, s.xqy)
-        rhs    <- rebaseXQuery(rBranch, s.xqy)
-        filter <- planMapFunc(on)      { case LeftSide => l.xqy case RightSide => r.xqy }
-        body   <- planMapFunc(combine) { case LeftSide => l.xqy case RightSide => r.xqy }
-      } yield let_(s -> src) return_ (for_(l -> lhs, r -> rhs) where_ filter return_ body)
+        l      <- freshName[F]
+        r      <- freshName[F]
+        s      <- freshName[F]
+        lhs    <- rebaseXQuery(lBranch, ~s)
+        rhs    <- rebaseXQuery(rBranch, ~s)
+        filter <- mergeXQuery(on, ~l, ~r)
+        body   <- mergeXQuery(combine, ~l, ~r)
+      } yield let_ (s := src) for_ (l in lhs, r in rhs) where_ filter return_ body
   }
 }

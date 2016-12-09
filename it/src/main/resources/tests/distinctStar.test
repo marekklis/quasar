@@ -1,13 +1,32 @@
 {
     "name": "distinct *",
     "backends": {
+        "mongodb_2_6":       "pending",
+        "mongodb_3_0":       "pending",
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "mongodb_3_2":       "pending",
+        "postgresql":        "pending"
     },
     "data": "cities.data",
     "query": "select distinct * from cities where city = \"BOSTON\"",
-    "predicate": "equalsExactly",
-    "expected": [{ "value": { "city": "BOSTON" } }]
+    "predicate": "containsExactly",
+    "expected": [
+        { "_id" : "02108", "city" : "BOSTON" },
+        { "_id" : "02109", "city" : "BOSTON" },
+        { "_id" : "02110", "city" : "BOSTON" },
+        { "_id" : "02111", "city" : "BOSTON" },
+        { "_id" : "02113", "city" : "BOSTON" },
+        { "_id" : "02114", "city" : "BOSTON" },
+        { "_id" : "02115", "city" : "BOSTON" },
+        { "_id" : "02116", "city" : "BOSTON" },
+        { "_id" : "02199", "city" : "BOSTON" },
+        { "_id" : "02210", "city" : "BOSTON" },
+        { "_id" : "02215", "city" : "BOSTON" },
+        { "_id" : "14025", "city" : "BOSTON" },
+        { "_id" : "15135", "city" : "BOSTON" },
+        { "_id" : "22713", "city" : "BOSTON" },
+        { "_id" : "31626", "city" : "BOSTON" },
+        { "_id" : "40107", "city" : "BOSTON" },
+        { "_id" : "75570", "city" : "BOSTON" }
+    ]
 }

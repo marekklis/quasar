@@ -16,6 +16,7 @@
 
 package quasar
 
+import quasar.common._
 import quasar.contrib.pathy._
 import quasar.fp.liftMT
 import quasar.fs._
@@ -28,7 +29,9 @@ import scalaz.stream.Process
 
 class ResultFileQueryRegressionSpec
   extends QueryRegressionTest[FileSystemIO](
-    QueryRegressionTest.externalFS.map(_.filterNot(fs => TestConfig.isMongoReadOnly(fs.name)))) {
+    QueryRegressionTest.externalFS.map(_.filterNot(fs =>
+      TestConfig.isMongoReadOnly(fs.name) || TestConfig.isCouchbase(fs.name)))
+  ) {
 
   val read = ReadFile.Ops[FileSystemIO]
 
@@ -45,7 +48,11 @@ class ResultFileQueryRegressionSpec
     for {
       tmpFile <- hoistM(manage.tempFile(DataDir)).liftM[Process]
       outFile <- fsQ.executeQuery(expr, vars, basePath, tmpFile).liftM[Process]
-      cleanup =  hoistM(manage.delete(tmpFile)).whenM(outFile ≟ tmpFile)
+      cleanup =  hoistM(
+                   query.fileExists(tmpFile).liftM[FileSystemErrT].ifM(
+                     manage.delete(tmpFile),
+                     ().point[M])
+                 ).whenM(outFile ≟ tmpFile)
       data    <- read.scanAll(outFile)
                    .translate(hoistM)
                    .onComplete(Process.eval_(cleanup))

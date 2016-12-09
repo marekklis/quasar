@@ -3,7 +3,6 @@
     "backends": {
         "mongodb_read_only": "pending",
         "postgresql":        "pending",
-        "marklogic":         "skip",
         "couchbase":         "skip"
     },
     "description": "combines an aggregate function (min) with a function implemented in JS (length)",

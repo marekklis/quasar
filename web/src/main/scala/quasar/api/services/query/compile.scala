@@ -16,15 +16,21 @@
 
 package quasar.api.services.query
 
-import scala.Predef.$conforms
 import quasar.Predef.{ -> => _, _ }
 import quasar._, RenderTree.ops._
 import quasar.api._, ToQResponse.ops._
 import quasar.api.services._
+import quasar.common._
 import quasar.contrib.pathy._
 import quasar.fp.ski._
 import quasar.fp.numeric._
+import quasar.frontend._
 import quasar.fs._
+import quasar.frontend.logicalplan.{LogicalPlan, LogicalPlanR}
+
+import scala.Predef.$conforms
+
+import scala.Predef.$conforms
 
 import argonaut._, Argonaut._
 import matryoshka._
@@ -33,6 +39,8 @@ import pathy.Path.posixCodec
 import scalaz._, Scalaz._
 
 object compile {
+  private val lpr = new LogicalPlanR[Fix]
+
   def service[S[_]](
     implicit
     Q: QueryFile.Ops[S],
@@ -52,7 +60,7 @@ object compile {
     def noOutputError(lp: Fix[LogicalPlan]): ApiError =
       ApiError.apiError(
         InternalServerError withReason "No explain output for plan.",
-        "logicalPlan" := lp.render)
+        "logicalplan" := lp.render)
 
     def explainQuery(
       expr: Fix[sql.Sql],
@@ -72,7 +80,7 @@ object compile {
                 .map(physicalPlanJson =>
                   Json(
                     "physicalPlan" := physicalPlanJson,
-                    "inputs"       := LogicalPlan.paths(lp).map(p => posixCodec.printPath(p))
+                    "inputs"       := lpr.paths(lp).map(posixCodec.printPath)
                   ).toResponse[S])
                 .toRightDisjunction(noOutputError(lp))
                 .toResponse[S]

@@ -1,10 +1,11 @@
 {
   "name": "sort by JS expression with filter",
 
+  "NB": "Couchbase disabled due to heap exhaustion",
+
   "backends": {
     "mongodb_read_only": "pending",
     "postgresql":        "pending",
-    "marklogic":         "skip",
     "couchbase":         "skip"
   },
 

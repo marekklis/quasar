@@ -1,0 +1,1 @@
+- Use scalaz.Equal for Sql.

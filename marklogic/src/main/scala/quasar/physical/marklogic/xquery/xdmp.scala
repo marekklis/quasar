@@ -60,6 +60,9 @@ object xdmp {
   def nodeUri(node: XQuery): XQuery =
     XQuery(s"xdmp:node-uri($node)")
 
+  def prettyPrint(qstring: XQuery): XQuery =
+    XQuery(s"xdmp:pretty-print($qstring)")
+
   def quarterFromDate(date: XQuery): XQuery =
     XQuery(s"xdmp:quarter-from-date($date)")
 

@@ -19,11 +19,10 @@ package quasar.sql
 import quasar.Predef._
 import quasar.contrib.pathy._, PathArbitrary._
 import quasar.sql.fixpoint._
-import quasar.std.StdLib._
 
 import matryoshka.Fix
 import org.scalacheck.{Arbitrary, Gen}
-import org.threeten.bp.{Duration, Instant}
+import java.time.{Duration, Instant}
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalaCheckBinding._
 
@@ -72,9 +71,10 @@ trait ExprArbitrary {
     (smallNonEmptyListOf(exprGen(depth)) ⊛ Gen.option(exprGen(depth)))(
       GroupBy(_, _))
 
-  private def orderByGen(depth: Int): Gen[OrderBy[Fix[Sql]]] =
-    smallNonEmptyListOf((Gen.oneOf(ASC, DESC) ⊛ exprGen(depth))((_, _))) ∘
-  (OrderBy(_))
+  private def orderByGen(depth: Int): Gen[OrderBy[Fix[Sql]]] = {
+    val order = Gen.oneOf(ASC, DESC) tuple exprGen(depth)
+    (order ⊛ smallNonEmptyListOf(order))((o, os) => OrderBy(NonEmptyList(o, os: _*)))
+  }
 
   private def exprGen(depth: Int): Gen[Fix[Sql]] = Gen.lzy {
     if (depth <= 0) simpleExprGen
@@ -95,11 +95,11 @@ trait ExprArbitrary {
         Gen.const("name, address"),
         Gen.const("q: \"a\"")) ∘
         (IdentR(_)),
-      1 -> InvokeFunctionR(date.Timestamp.name, List(StringLiteralR(Instant.now.toString))),
-      1 -> Gen.choose(0L, 10000000000L).map(millis => InvokeFunctionR(date.Interval.name, List(StringLiteralR(Duration.ofMillis(millis).toString)))),
-      1 -> InvokeFunctionR(date.Date.name, List(StringLiteralR("2014-11-17"))),
-      1 -> InvokeFunctionR(date.Time.name, List(StringLiteralR("12:00:00"))),
-      1 -> InvokeFunctionR(identity.ToId.name, List(StringLiteralR("123456")))
+      1 -> InvokeFunctionR("timestamp", List(StringLiteralR(Instant.now.toString))),
+      1 -> Gen.choose(0L, 10000000000L).map(millis => InvokeFunctionR("interval", List(StringLiteralR(Duration.ofMillis(millis).toString)))),
+      1 -> InvokeFunctionR("date", List(StringLiteralR("2014-11-17"))),
+      1 -> InvokeFunctionR("time", List(StringLiteralR("12:00:00"))),
+      1 -> InvokeFunctionR("oid", List(StringLiteralR("123456")))
     )
 
   private def complexExprGen(depth: Int): Gen[Fix[Sql]] =
@@ -123,29 +123,17 @@ trait ExprArbitrary {
           ShiftMapKeys,     ShiftArrayIndices,
           ShiftMapValues,   ShiftArrayValues))(
         UnopR(_, _)),
-      2 -> (for {
-        fn  <- Gen.oneOf(agg.Sum, agg.Count, agg.Avg, string.Length, structural.MakeArray)
-        arg <- exprGen(depth)
-      } yield InvokeFunctionR(fn.name, List(arg))),
-      1 -> (for {
-        arg <- exprGen(depth)
-      } yield InvokeFunctionR(string.Like.name, List(arg, StringLiteralR("B%"), StringLiteralR("")))),
-      1 -> (for {
-        expr  <- exprGen(depth)
-        cases <- casesGen(depth)
-        dflt  <- Gen.option(exprGen(depth))
-      } yield MatchR(expr, cases, dflt)),
-      1 -> (for {
-        cases <- casesGen(depth)
-        dflt  <- Gen.option(exprGen(depth))
-      } yield SwitchR(cases, dflt))
+      2 -> (Gen.oneOf("sum", "count", "avg", "length", "make_array") ⊛ exprGen(depth))(
+        (fn, arg) => InvokeFunctionR(fn, List(arg))),
+      1 -> exprGen(depth) ∘
+        (arg => InvokeFunctionR("like", List(arg, StringLiteralR("B%"), StringLiteralR("")))),
+      1 -> (exprGen(depth) ⊛ casesGen(depth) ⊛ Gen.option(exprGen(depth)))(
+        MatchR(_, _, _)),
+      1 -> (casesGen(depth) ⊛ Gen.option(exprGen(depth)))(SwitchR(_, _))
     )
 
   private def casesGen(depth: Int): Gen[List[Case[Fix[Sql]]]] =
-    smallNonEmptyListOf(for {
-      cond <- exprGen(depth)
-      expr <- exprGen(depth)
-    } yield Case(cond, expr))
+    smallNonEmptyListOf((exprGen(depth) ⊛ exprGen(depth))(Case (_, _)))
 
   def constExprGen: Gen[Fix[Sql]] =
     Gen.oneOf(

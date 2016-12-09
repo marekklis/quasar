@@ -1,0 +1,1 @@
+Properly notify developer that Spark tests are being skipped if `QUASAR_SPARK_LOCAL` is not set

@@ -17,27 +17,19 @@
 package quasar.physical.sparkcore.fs
 
 import quasar.Predef._
-import quasar.fs._
-import quasar.fs.QueryFile.ResultHandle
-import quasar.fs.mount.FileSystemDef, FileSystemDef.DefErrT
-import quasar.physical.sparkcore.fs.{readfile => corereadfile}
-import quasar.physical.sparkcore.fs.{queryfile => corequeryfile}
+import quasar.connector.EnvironmentError
+import quasar.contrib.pathy._
 import quasar.effect._
-import quasar.fs.ReadFile.ReadHandle
-import quasar.fs.WriteFile.WriteHandle
 import quasar.fp.TaskRef
 import quasar.fp.free._
-import quasar.fs.mount.FileSystemDef._
-import quasar.EnvironmentError
-import quasar.fs.mount.FileSystemDef._
-import quasar.fs.mount.ConnectionUri
-import quasar.contrib.pathy._
-
+import quasar.fs._, QueryFile.ResultHandle, ReadFile.ReadHandle, WriteFile.WriteHandle
+import quasar.fs.mount.{ConnectionUri, FileSystemDef}, FileSystemDef._
+import quasar.physical.sparkcore.fs.{queryfile => corequeryfile, readfile => corereadfile}
 
 import java.io.PrintWriter
 
-import pathy.Path._
 import org.apache.spark._
+import pathy.Path._
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 

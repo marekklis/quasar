@@ -18,7 +18,7 @@ package quasar.physical.couchbase.planner
 
 import quasar.Predef._
 import quasar.fp.eitherT._
-import quasar.PhaseResult.Detail
+import quasar.common.PhaseResult.detail
 import quasar.physical.couchbase._, common._
 import quasar.qscript, qscript._
 
@@ -31,7 +31,7 @@ final class ShiftedReadPlanner[F[_]: Monad] extends Planner[F, Const[ShiftedRead
       for {
         n    <- readPath[PR](absFile, idStatus)
         nStr =  n1ql(n)
-        _    <- prtell[M](Vector(Detail(
+        _    <- prtell[M](Vector(detail(
                   "N1QL ShiftedRead",
                   s"""  absFile:  $absFile
                      |  idStatus: $idStatus

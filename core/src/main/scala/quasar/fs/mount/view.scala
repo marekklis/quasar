@@ -23,7 +23,9 @@ import quasar.effect._
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.fp.numeric._
+import quasar.frontend.{SemanticErrors, SemanticErrsT}
 import quasar.fs._, FileSystemError._, PathError._
+import quasar.frontend.{logicalplan => lp}, lp.{LogicalPlan => LP, Optimizer}
 import quasar.sql.Sql
 
 import matryoshka.{free => _, _}, TraverseT.ops._, Recursive.ops._
@@ -31,6 +33,9 @@ import pathy.Path._
 import scalaz.{Failure => _, _}, Scalaz._
 
 object view {
+  private val optimizer = new Optimizer[Fix]
+  private val lpr = optimizer.lpr
+
   /** Translate reads on view paths to the equivalent queries. */
   def readFile[S[_]](
     implicit
@@ -56,7 +61,7 @@ object view {
       } yield h
 
     def openView(f: AFile, off: Natural, lim: Option[Positive]): FileSystemErrT[Free[S, ?], ReadHandle] = {
-      val readLP = addOffsetLimit(LogicalPlan.Read(f), off, lim)
+      val readLP = addOffsetLimit(lpr.read(f), off, lim)
 
       def dataHandle(data: List[Data]): Free[S, ReadHandle] =
         for {
@@ -64,7 +69,7 @@ object view {
           _ <- viewState.put(h, ResultSet.Data(data.toVector))
         } yield h
 
-      def queryHandle(lp: Fix[LogicalPlan]): FileSystemErrT[Free[S, ?], ReadHandle] =
+      def queryHandle(lp: Fix[LP]): FileSystemErrT[Free[S, ?], ReadHandle] =
         for {
           qh <- EitherT(queryUnsafe.eval(lp).run.value)
           h  <- seq.next.map(ReadHandle(f, _)).liftM[FileSystemErrT]
@@ -73,8 +78,8 @@ object view {
 
       for {
         lp <- resolveViewRefs[S](readLP).leftMap(se =>
-                planningFailed(readLP, Planner.InternalError(se.shows)))
-        h  <- refineConstantPlan(lp).fold(d => dataHandle(d).liftM[FileSystemErrT], queryHandle)
+                planningFailed(readLP, Planner.InternalError fromMsg se.shows))
+        h  <- refineConstantPlan(lp).fold(dataHandle(_).liftM[FileSystemErrT], queryHandle)
       } yield h
     }
 
@@ -260,9 +265,9 @@ object view {
     val mount = Mounting.Ops[S]
     import query.transforms.ExecM
 
-    def resolve[A](lp: Fix[LogicalPlan], op: Fix[LogicalPlan] => ExecM[A]) =
+    def resolve[A](lp: Fix[LP], op: Fix[LP] => ExecM[A]) =
       resolveViewRefs[S](lp).run.flatMap(_.fold(
-        e => planningFailed(lp, Planner.InternalError(e.shows)).raiseError[ExecM, A],
+        e => planningFailed(lp, Planner.InternalError fromMsg e.shows).raiseError[ExecM, A],
         p => op(p)).run.run)
 
     def listViews(dir: ADir): Free[S, Set[PathSegment]] =
@@ -321,28 +326,28 @@ object view {
   ): FileSystem ~> Free[S, ?] =
     interpretFileSystem[Free[S, ?]](queryFile, readFile, writeFile, manageFile)
 
-  /** Resolve view references in the given `LogicalPlan`. */
-  def resolveViewRefs[S[_]](lp: Fix[LogicalPlan])(implicit M: Mounting.Ops[S])
-    : SemanticErrsT[Free[S, ?], Fix[LogicalPlan]] = {
+  /** Resolve view references in the given `LP`. */
+  def resolveViewRefs[S[_]](plan: Fix[LP])(implicit M: Mounting.Ops[S])
+    : SemanticErrsT[Free[S, ?], Fix[LP]] = {
     import MountConfig._
 
-    def lift(e: Set[FPath], lp: Fix[LogicalPlan]) =
-      lp.unFix.map((e, _)).point[SemanticErrsT[Free[S, ?], ?]]
+    def lift(e: Set[FPath], plan: Fix[LP]) =
+      plan.project.map((e, _)).point[SemanticErrsT[Free[S, ?], ?]]
 
     def lookup(loc: AFile): OptionT[Free[S, ?], (Fix[Sql], Variables)] =
       OptionT(M.lookupConfig(loc).run.map(_.flatMap(viewConfig.getOption)))
 
-    def compiledView(loc: AFile): OptionT[Free[S, ?], SemanticErrors \/ Fix[LogicalPlan]] =
+    def compiledView(loc: AFile): OptionT[Free[S, ?], SemanticErrors \/ Fix[LP]] =
       lookup(loc).map { case (expr, vars) =>
          precompile(expr, vars, fileParent(loc)).run.value
       }
 
     // NB: simplify incoming queries to the raw, idealized LP which is simpler
     //     to manage.
-    val cleaned = lp.cata(Optimizer.elideTypeCheckƒ)
+    val cleaned = plan.cata(optimizer.elideTypeCheckƒ)
 
-    (Set[FPath](), cleaned).anaM[Fix, SemanticErrsT[Free[S, ?], ?], LogicalPlan] {
-      case (e, i @ Embed(r @ LogicalPlan.ReadF(p))) if !(e contains p) =>
+    (Set[FPath](), cleaned).anaM[Fix, SemanticErrsT[Free[S, ?], ?], LP] {
+      case (e, i @ Embed(lp.Read(p))) if !(e contains p) =>
         refineTypeAbs(p).swap.map(f =>
           EitherT(compiledView(f) getOrElse i.right).map(_.unFix.map((e + f, _)))
         ).getOrElse(lift(e, i))

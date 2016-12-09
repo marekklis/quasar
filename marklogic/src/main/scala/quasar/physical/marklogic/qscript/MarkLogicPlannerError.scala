@@ -18,13 +18,15 @@ package quasar.physical.marklogic.qscript
 
 import quasar.Predef._
 import quasar.ejson.EJson
-import quasar.fp.coproductShow
+import quasar.fp.{coproductEqual, coproductShow}
 import quasar.physical.marklogic.ErrorMessages
 
-import matryoshka.Fix
+import matryoshka._
 import monocle.Prism
 import scalaz._
+import scalaz.std.option._
 import scalaz.std.string._
+import scalaz.std.tuple._
 import scalaz.syntax.foldable._
 import scalaz.syntax.show._
 
@@ -33,7 +35,6 @@ sealed abstract class MarkLogicPlannerError
 object MarkLogicPlannerError {
   final case class InvalidQName(strLit: String) extends MarkLogicPlannerError
   final case class UnrepresentableEJson(ejson: Fix[EJson], msgs: ErrorMessages) extends MarkLogicPlannerError
-  final case class UnsupportedDatePart(name: String) extends MarkLogicPlannerError
 
   val invalidQName = Prism.partial[MarkLogicPlannerError, String] {
     case InvalidQName(s) => s
@@ -43,9 +44,8 @@ object MarkLogicPlannerError {
     case UnrepresentableEJson(ejs, msgs) => (ejs, msgs)
   } (UnrepresentableEJson.tupled)
 
-  val unsupportedDatePart = Prism.partial[MarkLogicPlannerError, String] {
-    case UnsupportedDatePart(name) => name
-  } (UnsupportedDatePart)
+  implicit val equal: Equal[MarkLogicPlannerError] =
+    Equal.equalBy(e => (invalidQName.getOption(e), unrepresentableEJson.getOption(e)))
 
   implicit val show: Show[MarkLogicPlannerError] =
     Show.shows {
@@ -54,9 +54,6 @@ object MarkLogicPlannerError {
 
       case UnrepresentableEJson(ejs, msgs) =>
         s"'${ejs.shows}' does not have an XQuery representation: ${msgs.intercalate(", ")}"
-
-      case UnsupportedDatePart(n) =>
-        s"Extracting '$n' from a date/time is not supported."
     }
 }
 

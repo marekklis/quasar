@@ -17,20 +17,22 @@
 package quasar.physical.sparkcore.fs
 
 import quasar.Predef._
-import quasar.{Data, LogicalPlan, PhaseResult, PhaseResults, PhaseResultT, PlannerErrT}
+import quasar.Data
 import quasar.Planner._
+import quasar.common.{PhaseResult, PhaseResults, PhaseResultT}
+import quasar.connector.PlannerErrT
 import quasar.contrib.matryoshka._
 import quasar.contrib.pathy._
 import quasar.effect.{KeyValueStore, MonotonicSeq, Read}
-import quasar.fp._
-import quasar.fp.eitherT._
+import quasar.fp._, eitherT._
 import quasar.fp.free._
 import quasar.fs._, FileSystemError._, QueryFile._
+import quasar.frontend.logicalplan.LogicalPlan
 import quasar.qscript._
 
+import matryoshka._, Recursive.ops._, FunctorT.ops._
 import org.apache.spark._
 import org.apache.spark.rdd._
-import matryoshka._, Recursive.ops._, FunctorT.ops._
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 

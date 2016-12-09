@@ -2,22 +2,21 @@
     "name": "convert values to/from strings",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "zips.data",
-    "query": "select integer(_id), decimal(_id), to_string(pop), to_string(loc[0]), to_string(length(city) < 9) from zips",
+    "query": "select integer(_id) as intId, decimal(_id) as decId, to_string(pop) as popStr, to_string(loc[0]) as locStr, to_string(length(city) < 9) as boolStr from zips",
     "predicate": "containsAtLeast",
+    "ignoreFieldOrder": [ "couchbase" ],
     "expected": [
-        { "0": 1001, "1": 1001.0, "2": "15338", "3": "-72.622739", "4": "true"  },
-        { "0": 1002, "1": 1002.0, "2": "36963", "3": "-72.51565",  "4": "true"  },
-        { "0": 1005, "1": 1005.0, "2":  "4546", "3": "-72.108354", "4": "true"  },
-        { "0": 1007, "1": 1007.0, "2": "10579", "3": "-72.410953", "4": "false" },
-        { "0": 1008, "1": 1008.0, "2":  "1240", "3": "-72.936114", "4": "false" },
-        { "0": 1010, "1": 1010.0, "2":  "3706", "3": "-72.188455", "4": "false" },
-        { "0": 1011, "1": 1011.0, "2":  "1688", "3": "-72.988761", "4": "true"  },
-        { "0": 1012, "1": 1012.0, "2":   "177", "3": "-72.833309", "4": "false" },
-        { "0": 1013, "1": 1013.0, "2": "23396", "3": "-72.607962", "4": "true"  },
-        { "0": 1020, "1": 1020.0, "2": "31495", "3": "-72.576142", "4": "true"  }]
+        { "intId": 1001, "decId": 1001.0, "popStr": "15338", "locStr": "-72.622739", "boolStr": "true"  },
+        { "intId": 1002, "decId": 1002.0, "popStr": "36963", "locStr": "-72.51565",  "boolStr": "true"  },
+        { "intId": 1005, "decId": 1005.0, "popStr":  "4546", "locStr": "-72.108354", "boolStr": "true"  },
+        { "intId": 1007, "decId": 1007.0, "popStr": "10579", "locStr": "-72.410953", "boolStr": "false" },
+        { "intId": 1008, "decId": 1008.0, "popStr":  "1240", "locStr": "-72.936114", "boolStr": "false" },
+        { "intId": 1010, "decId": 1010.0, "popStr":  "3706", "locStr": "-72.188455", "boolStr": "false" },
+        { "intId": 1011, "decId": 1011.0, "popStr":  "1688", "locStr": "-72.988761", "boolStr": "true"  },
+        { "intId": 1012, "decId": 1012.0, "popStr":   "177", "locStr": "-72.833309", "boolStr": "false" },
+        { "intId": 1013, "decId": 1013.0, "popStr": "23396", "locStr": "-72.607962", "boolStr": "true"  },
+        { "intId": 1020, "decId": 1020.0, "popStr": "31495", "locStr": "-72.576142", "boolStr": "true"  }]
 }

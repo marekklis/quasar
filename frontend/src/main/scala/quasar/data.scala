@@ -24,10 +24,11 @@ import quasar.javascript.{Js}
 
 import scala.Any
 
+import jawn._
 import matryoshka._
 import matryoshka.patterns._
 import monocle.Prism
-import org.threeten.bp.{Duration, Instant, LocalDate, LocalDateTime, LocalTime, ZoneOffset}
+import java.time.{Duration, Instant, LocalDate, LocalDateTime, LocalTime, ZoneOffset}
 import scalaz._, Scalaz._
 import scodec.bits.ByteVector
 
@@ -240,6 +241,24 @@ object Data {
   implicit val dataShow: Show[Data] = Show.showFromToString
 
   implicit val dataEqual: Equal[Data] = Equal.equalA
+
+  /** NB: For parsing arbitrary JSON into `Data`, _not_ for deserializing `Data`
+    *     previously serialized as JSON. For that, see `DataCodec`.
+    */
+  val jsonParser: SupportParser[Data] =
+    new SupportParser[Data] {
+      implicit val facade: Facade[Data] =
+        new SimpleFacade[Data] {
+          def jarray(arr: List[Data])         = Arr(arr)
+          def jobject(obj: Map[String, Data]) = Obj(ListMap(obj.toList: _*))
+          def jnull()                         = Null
+          def jfalse()                        = False
+          def jtrue()                         = True
+          def jnum(n: String)                 = Dec(BigDecimal(n))
+          def jint(n: String)                 = Int(BigInt(n))
+          def jstring(s: String)              = Str(s)
+        }
+    }
 
   object EJsonType {
     def apply(typ: String): Data =

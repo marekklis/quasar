@@ -17,9 +17,10 @@
 package quasar.std
 
 import quasar.Predef._
-import quasar.{Data, GenericFunc, LogicalPlan}, LogicalPlan._
+import quasar.{Data, GenericFunc}
 import quasar.RenderTree.ops._
 import quasar.fp.ski._
+import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 import quasar.std.StdLib._
 
 import matryoshka._, Recursive.ops._
@@ -31,6 +32,8 @@ import shapeless.Nat
 /** Test the typers and simplifiers defined in the std lib functions themselves.
   */
 class SimplifyStdLibSpec extends StdLibSpec {
+  import quasar.frontend.fixpoint.lpf
+
   val notHandled: Result \/ Unit = Skipped("not simplified").left
 
   def shortCircuit[N <: Nat](func: GenericFunc[N], args: List[Data]): Result \/ Unit = (func, args) match {
@@ -59,38 +62,38 @@ class SimplifyStdLibSpec extends StdLibSpec {
   }
 
   /** Identify constructs that are expected not to be implemented. */
-  def shortCircuitLP(args: List[Data]): AlgebraM[Result \/ ?, LogicalPlan, Unit] = {
-    case LogicalPlan.InvokeF(func, _) => shortCircuit(func, args)
-    case _ => ().right
+  def shortCircuitLP(args: List[Data]): AlgebraM[Result \/ ?, LP, Unit] = {
+    case Invoke(func, _) => shortCircuit(func, args)
+    case _               => ().right
   }
 
-  def check(args: List[Data], prg: List[Fix[LogicalPlan]] => Fix[LogicalPlan]): Option[Result] =
-    prg((0 until args.length).toList.map(idx => LogicalPlan.Free(Symbol("arg" + idx))))
+  def check(args: List[Data], prg: List[Fix[LP]] => Fix[LP]): Option[Result] =
+    prg((0 until args.length).toList.map(idx => lpf.free(Symbol("arg" + idx))))
       .cataM[Result \/ ?, Unit](shortCircuitLP(args)).swap.toOption
 
-  def run(lp: Fix[LogicalPlan], expected: Data): Result =
-    ensureCorrectTypes(lp).disjunction match {
-      case  \/-(Fix(LogicalPlan.ConstantF(d))) => (d must closeTo(expected)).toResult
+  def run(lp: Fix[LP], expected: Data): Result =
+    lpf.ensureCorrectTypes(lp).disjunction match {
+      case  \/-(Embed(Constant(d))) => (d must beCloseTo(expected)).toResult
       case  \/-(v) => Failure("not a constant", v.render.shows)
       case -\/ (err) => Failure("simplification failed", err.toString)
     }
 
   val runner = new StdLibTestRunner {
-    def nullary(prg: Fix[LogicalPlan], expected: Data) =
+    def nullary(prg: Fix[LP], expected: Data) =
       check(Nil, κ(prg)) getOrElse
         run(prg, expected)
 
-    def unary(prg: Fix[LogicalPlan] => Fix[LogicalPlan], arg: Data, expected: Data) =
+    def unary(prg: Fix[LP] => Fix[LP], arg: Data, expected: Data) =
       check(List(arg), { case List(arg1) => prg(arg1) }) getOrElse
-        run(prg(LogicalPlan.Constant(arg)), expected)
+        run(prg(lpf.constant(arg)), expected)
 
-    def binary(prg: (Fix[LogicalPlan], Fix[LogicalPlan]) => Fix[LogicalPlan], arg1: Data, arg2: Data, expected: Data) =
+    def binary(prg: (Fix[LP], Fix[LP]) => Fix[LP], arg1: Data, arg2: Data, expected: Data) =
       check(List(arg1, arg2), { case List(arg1, arg2) => prg(arg1, arg2) }) getOrElse
-        run(prg(LogicalPlan.Constant(arg1), LogicalPlan.Constant(arg2)), expected)
+        run(prg(lpf.constant(arg1), lpf.constant(arg2)), expected)
 
-    def ternary(prg: (Fix[LogicalPlan], Fix[LogicalPlan], Fix[LogicalPlan]) => Fix[LogicalPlan], arg1: Data, arg2: Data, arg3: Data, expected: Data) =
+    def ternary(prg: (Fix[LP], Fix[LP], Fix[LP]) => Fix[LP], arg1: Data, arg2: Data, arg3: Data, expected: Data) =
       check(List(arg1, arg2, arg3), { case List(arg1, arg2, arg3) => prg(arg1, arg2, arg3) }) getOrElse
-        run(prg(LogicalPlan.Constant(arg1), LogicalPlan.Constant(arg2), LogicalPlan.Constant(arg3)), expected)
+        run(prg(lpf.constant(arg1), lpf.constant(arg2), lpf.constant(arg3)), expected)
 
     def intDomain = arbitrary[BigInt]
 

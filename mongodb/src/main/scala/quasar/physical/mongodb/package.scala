@@ -18,10 +18,10 @@ package quasar.physical
 
 import quasar.Predef._
 import quasar.TernaryFunc
+import quasar.common.SortDir
 import quasar.javascript.Js
 import quasar.fs.PhysicalError
 import quasar.namegen._
-import quasar.qscript._
 
 import com.mongodb.async.AsyncBatchCursor
 import org.bson.BsonDocument

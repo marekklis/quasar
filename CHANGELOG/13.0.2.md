@@ -1,0 +1,1 @@
+- Containment of "left" and "right" hardcoded join sides in logical plan.

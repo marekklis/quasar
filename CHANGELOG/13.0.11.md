@@ -1,0 +1,2 @@
+- Preserve Undefined values in arrays in MarkLogic
+- Improve handling of inputs to qscript:length

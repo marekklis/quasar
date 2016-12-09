@@ -16,9 +16,9 @@
 
 package quasar.fs.mount
 
-import quasar.Predef.{None, Option, PartialFunction, String, Unit}
+import quasar.Predef._
+import quasar.connector.EnvironmentError
 import quasar.fp.ski.κ
-import quasar.EnvironmentError
 import quasar.fs.{FileSystem, FileSystemType}
 
 import scala.StringContext

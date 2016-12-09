@@ -1,0 +1,1 @@
+- Couchbase: Retrieve queryTimeout from connectionUri params

@@ -17,6 +17,7 @@
 package quasar.physical.couchbase
 
 import quasar.Predef._
+import quasar.DataCodec.Precise.NAKey
 
 import monocle.macros.Lenses
 import monocle.Prism
@@ -41,7 +42,7 @@ object N1QL {
     let: Option[Map[String, String]],
     filter: Option[String],
     groupBy: Option[String],
-    unnest: Option[String],
+    unnest: Option[(String, String)],
     orderBy: Option[String]
   ) extends N1QL {
     def n1ql: N1QL = this
@@ -70,6 +71,8 @@ object N1QL {
   ): Select =
     Select(value, resultExprs, none, none, let.some, none, none, none, none)
 
+  val naStr = s"""{ "$NAKey": null }"""
+
   def selectN1qlQueryString(sel: Select): String = {
     val ks = sel.keyspace.map {
       case v: Select             => n1qlQueryString(v)
@@ -86,34 +89,37 @@ object N1QL {
     val let = sel.let.map(_.map { case (k, v) => s"$k = $v" }.mkString(" let ", ", ", ""))
 
     // TODO: Workaround for the moment. Lift "null" into a N1QL type?
-    val groupBy = sel.groupBy.flatMap(v => (v === "null").fold(None, v.some))
+    val groupBy = sel.groupBy.flatMap(g => (g ≠ "null").option(
+      s" group by $g having $g is not null"))
+
+    val unnest = sel.unnest.map(u => s" unnest ifnull(${u._1}, $naStr) ${u._2}")
 
     "("                                              |+|
     s"select $value$resultExprs"                     |+|
     ks         .map(k => s" from $k$ksAlias").orZero |+|
     sel.filter .map(f => s" where $f"       ).orZero |+|
     let                                      .orZero |+|
-    groupBy    .map(g => s" group by $g"    ).orZero |+|
-    sel.unnest .map(u => s" unnest $u"      ).orZero |+|
-    sel.orderBy.map(o => s" order by ($o)"  ).orZero |+|
+    groupBy                                  .orZero |+|
+    unnest                                   .orZero |+|
+    sel.orderBy.map(o => s" order by $o"    ).orZero |+|
     ")"
   }
 
   def n1qlQueryString(n1ql: N1QL): String =
     n1ql match {
+      case s: Select             => selectN1qlQueryString(s)
       case PartialQueryString(v) => v
       case Read(v)               => v
-      case s: Select             => selectN1qlQueryString(s)
     }
 
-  def outerN1ql(n1ql: N1QL): String = {
+  def outerN1ql(n1ql: N1QL): N1QL = {
     val n1qlStr = n1qlQueryString(
       n1ql match {
         case PartialQueryString(v) => partialQueryString(s"(select value $v)")
         case v => v
       })
 
-    s"select value v from $n1qlStr as v"
+    partialQueryString(s"select value v from $n1qlStr as v")
   }
 
   implicit val show: Show[N1QL] = Show.showFromToString

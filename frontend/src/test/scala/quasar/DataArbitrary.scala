@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import org.threeten.bp._
+import java.time._
 import quasar.pkg.tests._
 
 trait DataArbitrary {

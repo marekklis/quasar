@@ -16,19 +16,21 @@
 
 package quasar.physical.mongodb.fs
 
-import scala.Predef.$conforms
 import quasar.Predef._
-
 import quasar._, DataArbitrary._, TestConfig.isMongoReadOnly
+import quasar.common._
 import quasar.contrib.pathy._
 import quasar.fp._
 import quasar.fp.ski._
+import quasar.frontend._
 import quasar.fs._, FileSystemError._, FileSystemTest._
 import quasar.main.FilesystemQueries
 import quasar.physical.mongodb.Collection
 import quasar.physical.mongodb.fs.MongoDbFileSystemSpec.mongoFsUT
 import quasar.regression._
 import quasar.sql, sql.Sql
+
+import scala.Predef.$conforms
 
 import com.mongodb.MongoException
 import matryoshka.Fix

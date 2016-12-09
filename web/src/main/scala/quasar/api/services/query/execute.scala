@@ -20,6 +20,7 @@ import quasar.Predef.{ -> => _, _ }
 import quasar._
 import quasar.api._, ToApiError.ops._
 import quasar.api.services._
+import quasar.common._
 import quasar.contrib.pathy._
 import quasar.fp._
 import quasar.fp.ski._

@@ -19,8 +19,7 @@ package quasar.physical.mongodb.fs
 import quasar.Predef._
 import quasar._
 import quasar.contrib.pathy.ADir
-import quasar.fs.FileSystemType
-import quasar.fs.mount.{ConnectionUri, MountConfig}, MountConfig._
+import quasar.fs.mount.ConnectionUri
 import quasar.physical.mongodb.Collection
 
 import com.mongodb.async.client.MongoClient
@@ -31,14 +30,6 @@ import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 
 object MongoDbSpec {
-  def cfgs(fsType: FileSystemType): Task[List[(BackendName, ConnectionUri, ConnectionUri)]] =
-    TestConfig.backendNames.traverse(n => TestConfig.loadConfigPair(n).map[Option[(BackendName, ConnectionUri, ConnectionUri)]] {
-      case (FileSystemConfig(`fsType`, testUri),
-            FileSystemConfig(`fsType`, setupUri)) =>
-        (n, testUri, setupUri).some
-      case _ => None
-    }.run).map(_.map(_.join).flatten)
-
   def connect(uri: ConnectionUri): Task[MongoClient] =
     asyncClientDef[Task](uri).run.foldMap(NaturalTransformation.refl).flatMap(_.fold(
       err => Task.fail(new RuntimeException(err.toString)),
@@ -53,7 +44,7 @@ object MongoDbSpec {
 
   def clientShould(examples: (BackendName, ADir, MongoClient, MongoClient) => Fragment): Fragments =
     TestConfig.testDataPrefix.flatMap { prefix =>
-      cfgs(MongoDBFsType).flatMap(_.traverse { case (name, setupUri, testUri) =>
+      TestConfig.fileSystemConfigs(MongoDBFsType).flatMap(_.traverse { case (name, setupUri, testUri) =>
         (connect(setupUri) |@| connect(testUri)) { (setupClient, testClient) =>
             Fragments(
               examples(name, prefix, setupClient, testClient),

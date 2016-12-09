@@ -17,7 +17,7 @@
 package quasar
 
 import quasar.Predef._
-import quasar.fp._, ski._
+import quasar.fp._
 import quasar.contrib.matryoshka._
 
 import argonaut._, Argonaut._
@@ -199,13 +199,8 @@ object RenderTree extends RenderTreeInstances {
   implicit def naturalTransformation[F[_], A: RenderTree](implicit F: Delay[RenderTree, F]): RenderTree[F[A]] =
     F(RenderTree[A])
 
-  implicit def fix[F[_]](implicit RF: Delay[RenderTree, F]): RenderTree[Fix[F]] =
-    make(RF(fix[F]) render _.unFix)
-
   implicit def free[F[_]: Functor, A: RenderTree](implicit F: Delay[RenderTree, F]): RenderTree[Free[F, A]] =
-    make(t => freeCata(t)(interpret[F, A, RenderedTree](
-      a => a.render,
-      f => F(RenderTree.make[RenderedTree](ι)).render(f))))
+    RenderTreeT.free[A].renderTree[F](F)
 
   implicit def cofree[F[_], A: RenderTree](implicit RF: Delay[RenderTree, F]): RenderTree[Cofree[F, A]] =
     make(t => NonTerminal(List("Cofree"), None, List(t.head.render, RF(cofree[F, A]).render(t.tail))))

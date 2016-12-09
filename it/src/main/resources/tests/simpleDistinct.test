@@ -2,9 +2,7 @@
   "name": "simple distinct",
 
   "backends": {
-    "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "postgresql": "pending"
   },
 
   "data": "olympics.data",

@@ -1,0 +1,1 @@
+Add Specification for `KeyValueStore` effect

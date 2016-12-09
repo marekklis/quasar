@@ -3,8 +3,7 @@
     "backends": {
         "mongodb_read_only": "pending",
         "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "marklogic":         "skip"
     },
     "data": "usa_factbook.data",
     "query": "select geo{*} from usa_factbook",

@@ -17,9 +17,10 @@
 package quasar
 
 import quasar.Predef._
-import quasar.LogicalPlan._
+import quasar.common.SortDir
+import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 import quasar.sql.CompilerHelpers
-import quasar.std._, StdLib.set._, StdLib.structural._
+import quasar.std._, StdLib.structural._
 
 import matryoshka._, FunctorT.ops._
 import org.scalacheck._
@@ -29,169 +30,167 @@ import scalaz.scalacheck.ScalaCheckBinding._
 import scalaz.scalacheck.ScalazProperties._
 
 class OptimizerSpec extends quasar.Qspec with CompilerHelpers with TreeMatchers {
+  import quasar.frontend.fixpoint._
+
   "simplify" should {
 
     "inline trivial binding" in {
-      Optimizer.simplify[Fix](Let('tmp0, read("foo"), Free('tmp0))) must
-        beTree(read("foo"))
+      optimizer.simplify(lpf.let('tmp0, read("foo"), lpf.free('tmp0))) must
+        beTreeEqual(read("foo"))
     }
 
     "not inline binding that's used twice" in {
-      Optimizer.simplify[Fix](Let('tmp0, read("foo"),
+      optimizer.simplify(lpf.let('tmp0, read("foo"),
         makeObj(
-          "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-          "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))) must
-        beTree(
-          Let('tmp0, read("foo"),
+          "bar" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("bar"))),
+          "baz" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("baz")))))) must
+        beTreeEqual(
+          lpf.let('tmp0, read("foo"),
             makeObj(
-              "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-              "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))))
+              "bar" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("bar"))),
+              "baz" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("baz"))))))
     }
 
     "completely inline stupid lets" in {
-      Optimizer.simplify[Fix](Let('tmp0, read("foo"), Let('tmp1, Free('tmp0), Free('tmp1)))) must
-        beTree(read("foo"))
+      optimizer.simplify(lpf.let('tmp0, read("foo"), lpf.let('tmp1, lpf.free('tmp0), lpf.free('tmp1)))) must
+        beTreeEqual(read("foo"))
     }
 
     "inline correct value for shadowed binding" in {
-      Optimizer.simplify[Fix](Let('tmp0, read("foo"),
-        Let('tmp0, read("bar"),
+      optimizer.simplify(lpf.let('tmp0, read("foo"),
+        lpf.let('tmp0, read("bar"),
           makeObj(
-            "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))))))) must
-        beTree(
+            "bar" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("bar"))))))) must
+        beTreeEqual(
           makeObj(
-            "bar" -> ObjectProject(read("bar"), Constant(Data.Str("bar")))))
+            "bar" -> lpf.invoke2(ObjectProject, read("bar"), lpf.constant(Data.Str("bar")))))
     }
 
     "inline a binding used once, then shadowed once" in {
-      Optimizer.simplify[Fix](Let('tmp0, read("foo"),
-        ObjectProject(Free('tmp0),
-          Let('tmp0, read("bar"),
+      optimizer.simplify(lpf.let('tmp0, read("foo"),
+        lpf.invoke2(ObjectProject, lpf.free('tmp0),
+          lpf.let('tmp0, read("bar"),
             makeObj(
-              "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar")))))))) must
-        beTree(
-          Invoke(ObjectProject, Func.Input2(
+              "bar" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("bar")))))))) must
+        beTreeEqual(
+          lpf.invoke(ObjectProject, Func.Input2(
             read("foo"),
             makeObj(
-              "bar" -> ObjectProject(read("bar"), Constant(Data.Str("bar")))))))
+              "bar" -> lpf.invoke2(ObjectProject, read("bar"), lpf.constant(Data.Str("bar")))))))
     }
 
     "inline a binding used once, then shadowed twice" in {
-      Optimizer.simplify[Fix](Let('tmp0, read("foo"),
-        ObjectProject(Free('tmp0),
-          Let('tmp0, read("bar"),
+      optimizer.simplify(lpf.let('tmp0, read("foo"),
+        lpf.invoke2(ObjectProject, lpf.free('tmp0),
+          lpf.let('tmp0, read("bar"),
             makeObj(
-              "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-              "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz")))))))) must
-        beTree(
-          Invoke(ObjectProject, Func.Input2(
+              "bar" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("bar"))),
+              "baz" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("baz")))))))) must
+        beTreeEqual(
+          lpf.invoke(ObjectProject, Func.Input2(
             read("foo"),
-            Let('tmp0, read("bar"),
+            lpf.let('tmp0, read("bar"),
               makeObj(
-                "bar" -> ObjectProject(Free('tmp0), Constant(Data.Str("bar"))),
-                "baz" -> ObjectProject(Free('tmp0), Constant(Data.Str("baz"))))))))
+                "bar" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("bar"))),
+                "baz" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("baz"))))))))
     }
 
     "partially inline a more interesting case" in {
-      Optimizer.simplify[Fix](Let('tmp0, read("person"),
-        Let('tmp1,
+      optimizer.simplify(lpf.let('tmp0, read("person"),
+        lpf.let('tmp1,
           makeObj(
-            "name" -> ObjectProject(Free('tmp0), Constant(Data.Str("name")))),
-          Let('tmp2,
-            OrderBy[FLP](
-              Free('tmp1),
-              MakeArray[FLP](
-                ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
-              Constant(Data.Str("foobar"))),
-            Free('tmp2))))) must
-        beTree(
-          Let('tmp1,
+            "name" -> lpf.invoke2(ObjectProject, lpf.free('tmp0), lpf.constant(Data.Str("name")))),
+          lpf.let('tmp2,
+            lpf.sort(
+              lpf.free('tmp1),
+              (lpf.invoke2(ObjectProject, lpf.free('tmp1), lpf.constant(Data.Str("name"))), SortDir.asc).wrapNel),
+            lpf.free('tmp2))))) must
+        beTreeEqual(
+          lpf.let('tmp1,
             makeObj(
               "name" ->
-                ObjectProject(read("person"), Constant(Data.Str("name")))),
-            OrderBy[FLP](
-              Free('tmp1),
-              MakeArray[FLP](
-                ObjectProject(Free('tmp1), Constant(Data.Str("name")))),
-              Constant(Data.Str("foobar")))))
+                lpf.invoke2(ObjectProject, read("person"), lpf.constant(Data.Str("name")))),
+            lpf.sort(
+              lpf.free('tmp1),
+              (lpf.invoke2(ObjectProject, lpf.free('tmp1), lpf.constant(Data.Str("name"))), SortDir.asc).wrapNel)))
     }
   }
 
   "preferProjections" should {
     "ignore a delete with unknown shape" in {
-      Optimizer.preferProjections(
-        DeleteField(Read(file("zips")),
-          Constant(Data.Str("pop")))) must
-        beTree[Fix[LogicalPlan]](
-          DeleteField(Read(file("zips")),
-            Constant(Data.Str("pop"))))
+      optimizer.preferProjections(
+        lpf.invoke2(DeleteField, lpf.read(file("zips")),
+          lpf.constant(Data.Str("pop")))) must
+        beTreeEqual[Fix[LP]](
+          lpf.invoke2(DeleteField, lpf.read(file("zips")),
+            lpf.constant(Data.Str("pop"))))
     }
 
     "convert a delete after a projection" in {
-      Optimizer.preferProjections(
-        Let('meh, Read(file("zips")),
-          DeleteField[FLP](
+      optimizer.preferProjections(
+        lpf.let('meh, lpf.read(file("zips")),
+          lpf.invoke2(DeleteField,
             makeObj(
-              "city" -> ObjectProject(Free('meh), Constant(Data.Str("city"))),
-              "pop"  -> ObjectProject(Free('meh), Constant(Data.Str("pop")))),
-            Constant(Data.Str("pop"))))) must
-      beTree(
-        Let('meh, Read(file("zips")),
+              "city" -> lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("city"))),
+              "pop"  -> lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("pop")))),
+            lpf.constant(Data.Str("pop"))))) must
+      beTreeEqual(
+        lpf.let('meh, lpf.read(file("zips")),
           makeObj(
             "city" ->
-              ObjectProject(
+              lpf.invoke2(ObjectProject,
                 makeObj(
                   "city" ->
-                    ObjectProject(Free('meh), Constant(Data.Str("city"))),
+                    lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("city"))),
                   "pop" ->
-                    ObjectProject(Free('meh), Constant(Data.Str("pop")))),
-                Constant(Data.Str("city"))))))
+                    lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("pop")))),
+                lpf.constant(Data.Str("city"))))))
     }
 
     "convert a delete when the shape is hidden by a Free" in {
-      Optimizer.preferProjections(
-        Let('meh, Read(file("zips")),
-          Let('meh2,
+      optimizer.preferProjections(
+        lpf.let('meh, lpf.read(file("zips")),
+          lpf.let('meh2,
             makeObj(
-              "city" -> ObjectProject(Free('meh), Constant(Data.Str("city"))),
-              "pop"  -> ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+              "city" -> lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("city"))),
+              "pop"  -> lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("pop")))),
             makeObj(
-              "orig" -> Free('meh2),
+              "orig" -> lpf.free('meh2),
               "cleaned" ->
-                DeleteField(Free('meh2), Constant(Data.Str("pop"))))))) must
-      beTree(
-        Let('meh, Read(file("zips")),
-          Let('meh2,
+                lpf.invoke2(DeleteField, lpf.free('meh2), lpf.constant(Data.Str("pop"))))))) must
+      beTreeEqual(
+        lpf.let('meh, lpf.read(file("zips")),
+          lpf.let('meh2,
             makeObj(
-              "city" -> ObjectProject(Free('meh), Constant(Data.Str("city"))),
-              "pop"  -> ObjectProject(Free('meh), Constant(Data.Str("pop")))),
+              "city" -> lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("city"))),
+              "pop"  -> lpf.invoke2(ObjectProject, lpf.free('meh), lpf.constant(Data.Str("pop")))),
             makeObj(
-              "orig" -> Free('meh2),
+              "orig" -> lpf.free('meh2),
               "cleaned" ->
                 makeObj(
                   "city" ->
-                    ObjectProject(Free('meh2), Constant(Data.Str("city"))))))))
+                    lpf.invoke2(ObjectProject, lpf.free('meh2), lpf.constant(Data.Str("city"))))))))
     }
   }
 
   "Component" should {
-    implicit def componentArbitrary[A: Arbitrary]: Arbitrary[Optimizer.Component[A]] =
-      Arbitrary(Arbitrary.arbitrary[A]) ∘ (Optimizer.NeitherCond(_))
+    implicit def componentArbitrary[A: Arbitrary]: Arbitrary[Component[Fix, A]] =
+      Arbitrary(Arbitrary.arbitrary[A]) ∘ (NeitherCond(_))
 
-    implicit def ArbComponentInt: Arbitrary[Optimizer.Component[Int]] =
+    implicit def ArbComponentInt: Arbitrary[Component[Fix, Int]] =
       componentArbitrary[Int]
 
-    implicit def ArbComponentInt2Int: Arbitrary[Optimizer.Component[Int => Int]] =
+    implicit def ArbComponentInt2Int: Arbitrary[Component[Fix, Int => Int]] =
       componentArbitrary[Int => Int]
 
     // FIXME this test isn't really testing much at this point because
     // we cannot test the equality of two functions
-    implicit def EqualComponent: Equal[Optimizer.Component[Int]] = new Equal[Optimizer.Component[Int]] {
-      def equal(a1: Optimizer.Component[Int], a2: Optimizer.Component[Int]): Boolean = true
+    implicit def EqualComponent: Equal[Component[Fix, Int]] = new Equal[Component[Fix, Int]] {
+      def equal(a1: Component[Fix, Int], a2: Component[Fix, Int]): Boolean = true
     }
 
     "obey applicative laws" in {
-      applicative.laws[Optimizer.Component]
+      applicative.laws[Component[Fix, ?]]
     }
   }
 }

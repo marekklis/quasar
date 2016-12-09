@@ -21,7 +21,7 @@ import quasar._, Planner._
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.physical.mongodb.Bson
-import quasar.jscore, jscore.JsFn
+import quasar.jscore, jscore.{JsCore, JsFn}
 
 import matryoshka._
 import scalaz._, Scalaz._
@@ -99,9 +99,19 @@ object ExprOp3_2F {
 
     // FIXME: Define a proper `Show[ExprOp3_0F]` instance.
     @SuppressWarnings(Array("org.wartremover.warts.ToString"))
-    def toJsSimple: AlgebraM[PlannerError \/ ?, ExprOp3_2F, JsFn] =
-      // TODO: it's not clear that this will be needed prior to swtiching to the QScript backend
-      expr => UnsupportedJS(expr.toString).left
+    def toJsSimple: AlgebraM[PlannerError \/ ?, ExprOp3_2F, JsFn] = {
+      import jscore._
+
+      def expr1(x1: JsFn)(f: JsCore => JsCore): PlannerError \/ JsFn =
+        \/-(JsFn(JsFn.defaultName, f(x1(jscore.Ident(JsFn.defaultName)))))
+
+      {
+        case $truncF(a1) => expr1(a1)(x =>
+          Call(Select(ident("Math"), "trunc"), List(x)))
+
+        case expr => UnsupportedJS(expr.toString).left
+      }
+    }
 
     def rewriteRefs0(applyVar: PartialFunction[DocVar, DocVar]) = κ(None)
   }

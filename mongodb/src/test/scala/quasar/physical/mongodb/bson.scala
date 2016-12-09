@@ -22,7 +22,7 @@ import quasar._
 import quasar.javascript._
 import quasar.jscore
 
-import org.threeten.bp._
+import java.time._
 import scalaz._, Scalaz._
 
 class BsonSpecs extends quasar.Qspec {

@@ -1,0 +1,1 @@
+- Pretty print XQuery in phase results from MarkLogic planner.

@@ -146,7 +146,7 @@ class ExpressionSpec extends quasar.Qspec {
   }
 
   "toJs" should {
-    import org.threeten.bp._
+    import java.time._
     import quasar.jscore._
 
     "handle addition with epoch date literal" in {

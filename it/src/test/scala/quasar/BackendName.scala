@@ -18,4 +18,10 @@ package quasar
 
 import quasar.Predef._
 
+import scalaz.Equal
+
 final case class BackendName(name: String) extends scala.AnyVal
+
+object BackendName {
+  implicit val equal: Equal[BackendName] = Equal.equalA
+}

@@ -2,21 +2,20 @@
     "name": "handle undefined values",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "zips.data",
-    "query": "select foo ?? pop, city ?? false from zips",
+    "query": "select foo ?? pop as p, city ?? false as c from zips",
     "predicate": "containsAtLeast",
-    "expected": [{ "0": 15338.0, "1": "AGAWAM"       },
-                 { "0": 36963.0, "1": "CUSHMAN"      },
-                 { "0":  4546.0, "1": "BARRE"        },
-                 { "0": 10579.0, "1": "BELCHERTOWN"  },
-                 { "0":  1240.0, "1": "BLANDFORD"    },
-                 { "0":  3706.0, "1": "BRIMFIELD"    },
-                 { "0":  1688.0, "1": "CHESTER"      },
-                 { "0":   177.0, "1": "CHESTERFIELD" },
-                 { "0": 23396.0, "1": "CHICOPEE"     },
-                 { "0": 31495.0, "1": "CHICOPEE"     }]
+    "ignoreFieldOrder": [ "couchbase" ],
+    "expected": [{ "p": 15338.0, "c": "AGAWAM"       },
+                 { "p": 36963.0, "c": "CUSHMAN"      },
+                 { "p":  4546.0, "c": "BARRE"        },
+                 { "p": 10579.0, "c": "BELCHERTOWN"  },
+                 { "p":  1240.0, "c": "BLANDFORD"    },
+                 { "p":  3706.0, "c": "BRIMFIELD"    },
+                 { "p":  1688.0, "c": "CHESTER"      },
+                 { "p":   177.0, "c": "CHESTERFIELD" },
+                 { "p": 23396.0, "c": "CHICOPEE"     },
+                 { "p": 31495.0, "c": "CHICOPEE"     }]
 }

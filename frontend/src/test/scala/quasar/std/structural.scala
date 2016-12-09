@@ -36,6 +36,9 @@ class StructuralSpecs extends quasar.Qspec with ValidationMatchers {
     // else is known about it.
     val unknown = AnyArray ⨿ Str
 
+    def stringToList(s: String): List[Data] =
+      s.map(c => Data.Str(c.toString)).toList
+
     "type combination of arbitrary strs as str" >> prop { (st1: Type, st2: Type) =>
       ConcatOp.tpe(Func.Input2(st1, st2)).map(Str contains _) must beSuccessful(true)
       ConcatOp.tpe(Func.Input2(st2, st1)).map(Str contains _) must beSuccessful(true)
@@ -66,10 +69,20 @@ class StructuralSpecs extends quasar.Qspec with ValidationMatchers {
         beSuccessful(Const(Data.Arr(ds1 ++ ds2)))
     }
 
-    "fail with mixed Str and array args" >> prop { (st: Type, at: Type) =>
-      ConcatOp.tpe(Func.Input2(st, at)) must beFailing
-      ConcatOp.tpe(Func.Input2(at, st)) must beFailing
+    "type mixed Str and array args as array" >> prop { (st: Type, at: Type) =>
+      ConcatOp.tpe(Func.Input2(st, at)).map(_.arrayLike) must beSuccessful(true)
+      ConcatOp.tpe(Func.Input2(at, st)).map(_.arrayLike) must beSuccessful(true)
     }.setArbitrary1(arbStrType).setArbitrary2(arbArrayType)
+
+    "fold constant string || array" >> prop { (s: String, xs: List[Data]) =>
+      ConcatOp.tpe(Func.Input2(Const(Data.Str(s)), Const(Data.Arr(xs)))) must
+        beSuccessful(Const(Data.Arr(stringToList(s) ::: xs)))
+    }
+
+    "fold constant array || string" >> prop { (s: String, xs: List[Data]) =>
+      ConcatOp.tpe(Func.Input2(Const(Data.Arr(xs)), Const(Data.Str(s)))) must
+        beSuccessful(Const(Data.Arr(xs ::: stringToList(s))))
+    }
 
     "propagate unknown types" in {
       ConcatOp.tpe(Func.Input2(unknown, unknown)) must beSuccessful(unknown)

@@ -18,8 +18,13 @@ package quasar.physical.marklogic.xquery
 
 import quasar.Predef._
 
+import monocle.Prism
 import scalaz._
 import scalaz.std.iterable._
+import scalaz.std.string._
+import scalaz.syntax.foldable._
+import scalaz.syntax.std.boolean._
+import scalaz.syntax.std.option._
 
 sealed abstract class XQuery {
   import XQuery._
@@ -46,15 +51,15 @@ sealed abstract class XQuery {
   def to(upper: XQuery): XQuery = XQuery(s"$this to $upper")
 
   def `/`(xqy: XQuery): XQuery = xqy match {
-    case Step(s)        => XQuery(s"$this/$s")
-    case StringLit(s)   => XQuery(s"""$this/"$s"""")
-    case Expression(ex) => XQuery(s"""$this/xdmp:value("$ex")""")
+    case Step(s)      => XQuery(s"$this/$s")
+    case StringLit(s) => XQuery(s"""$this/"$s"""")
+    case other        => XQuery(s"""$this/xdmp:value("$other")""")
   }
 
   def `//`(xqy: XQuery): XQuery = xqy match {
-    case Step(s)        => XQuery(s"$this//$s")
-    case StringLit(s)   => XQuery(s"""$this//"$s"""")
-    case Expression(ex) => XQuery(s"""$this//xdmp:value("$ex")""")
+    case Step(s)      => XQuery(s"$this//$s")
+    case StringLit(s) => XQuery(s"""$this//"$s"""")
+    case other        => XQuery(s"""$this//xdmp:value("$other")""")
   }
 
   // Value Comparisons
@@ -102,10 +107,50 @@ object XQuery {
   /** XPath [Step](https://www.w3.org/TR/xquery/#id-steps) expression. */
   final case class Step(override val toString: String) extends XQuery
 
+  final case class Flwor(
+    bindingClauses: NonEmptyList[BindingClause],
+    filterExpr: Option[XQuery],
+    orderSpecs: IList[(XQuery, SortDirection)],
+    orderIsStable: Boolean,
+    resultExpr: XQuery
+  ) extends XQuery {
+    override def toString: String = {
+      val bindings =
+        bindingClauses map (_.render) intercalate " "
+
+      val whereClause =
+        filterExpr.map(expr => s"where $expr ").orZero
+
+      val orderClause = {
+        val specs = orderSpecs map {
+          case (xqy, sortDir) => s"$xqy ${sortDir.asOrderModifier}"
+        } intercalate ", "
+
+        val orderKeyword = orderIsStable.fold("stable order", "order")
+
+        if (orderSpecs.isEmpty) "" else s"$orderKeyword by $specs "
+      }
+
+      s"$bindings ${whereClause}${orderClause}return $resultExpr"
+    }
+  }
+
   final case class Expression(override val toString: String) extends XQuery
 
   def apply(expr: String): XQuery =
     Expression(expr)
+
+  val stringLit = Prism.partial[XQuery, String] {
+    case StringLit(s) => s
+  } (StringLit)
+
+  val step = Prism.partial[XQuery, String] {
+    case Step(s) => s
+  } (Step)
+
+  val flwor = Prism.partial[XQuery, (NonEmptyList[BindingClause], Option[XQuery], IList[(XQuery, SortDirection)], Boolean, XQuery)] {
+    case Flwor(bindings, filter, order, isStable, result) => (bindings, filter, order, isStable, result)
+  } (Flwor.tupled)
 
   implicit val show: Show[XQuery] =
     Show.showFromToString

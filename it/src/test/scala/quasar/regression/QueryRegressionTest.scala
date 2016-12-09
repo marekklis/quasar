@@ -18,6 +18,9 @@ package quasar.regression
 
 import quasar.Predef._
 import quasar._
+import quasar.build.BuildInfo
+import quasar.common._
+import quasar.frontend._
 import quasar.contrib.pathy._
 import quasar.fp._, eitherT._, free._
 import quasar.fp.ski._
@@ -87,12 +90,22 @@ abstract class QueryRegressionTest[S[_]](
 
   lazy val tests = regressionTests(TestsRoot, knownFileSystems).unsafePerformSync
 
+  // NB: The printing is just to indicate progress (especially for travis-ci) as
+  //     these tests have the potential to be slow for a backend.
+  //
+  //     Ideally, we'd have specs2 log each example in the suite as it finishes, but
+  //     all attempts at doing this have been unsuccessful, if we succeed eventually
+  //     this printing can be removed.
   fileSystemShould { fs =>
     suiteName should {
+      step(print(s"Running $suiteName ["))
+
       tests.toList foreach { case (f, t) =>
         regressionExample(f, t, fs.name, fs.setupInterpM, fs.testInterpM)
+        step(print("."))
       }
 
+      step(println("]"))
       step(runT(fs.setupInterpM)(manage.delete(DataDir)).runVoid)
     }
   }
@@ -110,7 +123,7 @@ abstract class QueryRegressionTest[S[_]](
     def runTest: Result = {
       val data = testQuery(DataDir </> fileParent(loc), test.query, test.variables)
 
-      (ensureTestData(loc, test, setup) *> verifyResults(test.expected, data, run))
+      (ensureTestData(loc, test, setup) *> verifyResults(test.expected, data, run, backendName))
         .timed(5.minutes)
         .unsafePerformSync
     }
@@ -118,10 +131,12 @@ abstract class QueryRegressionTest[S[_]](
     s"${test.name} [${posixCodec.printPath(loc)}]" >> {
       test.backends.get(backendName) match {
         case Some(SkipDirective.Skip)    => skipped
+        case Some(SkipDirective.SkipCI)  =>
+          BuildInfo.isCIBuild.fold(Skipped("(skipped during CI build)"), runTest)
         case Some(SkipDirective.Pending) =>
-          if (quasar.build.BuildInfo.coverageEnabled)
+          if (BuildInfo.coverageEnabled)
             Skipped("(pending example skipped during coverage run)")
-          else if (quasar.build.BuildInfo.isCIBuild)
+          else if (BuildInfo.isCIBuild)
             Skipped("(pending example skipped during CI build)")
           else
             runTest.pendingUntilFixed
@@ -148,7 +163,8 @@ abstract class QueryRegressionTest[S[_]](
   def verifyResults(
     exp: ExpectedResult,
     act: Process[CompExecM, Data],
-    run: Run
+    run: Run,
+    backendName: BackendName
   ): Task[Result] = {
 
     type H1[A] = PhaseResultT[Task, A]
@@ -169,7 +185,12 @@ abstract class QueryRegressionTest[S[_]](
     exp.predicate(
       exp.rows.toVector,
       act.map(deleteFields.compose[Data](_.asJson)).translate[Task](liftRun),
-      exp.fieldOrder)
+      exp.ignoreFieldOrderBackend match {
+        case IgnoreFieldOrderAllBackends            =>
+          FieldOrderIgnored
+        case IgnoreFieldOrderBackends(backendNames) =>
+          backendNames.exists(_ ≟ backendName).fold(FieldOrderIgnored, FieldOrderPreserved)
+      })
   }
 
   /** Parse and execute the given query, returning a stream of results. */

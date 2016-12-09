@@ -17,18 +17,17 @@
 package quasar.physical.marklogic.fs
 
 import quasar.Predef._
-import quasar.NameGenerator
-import quasar.{Data, LogicalPlan, Planner => QPlanner}
-import quasar.{PhaseResult, PhaseResults, PhaseResultT}
+import quasar.{Data, Planner => QPlanner}
+import quasar.common.{PhaseResult, PhaseResults, PhaseResultT}
 import quasar.contrib.matryoshka._
 import quasar.contrib.pathy._
 import quasar.effect.MonotonicSeq
-import quasar.fp._
-import quasar.fp.eitherT._
+import quasar.fp._, eitherT._
 import quasar.fp.free.lift
 import quasar.fp.numeric.Positive
 import quasar.fs._
 import quasar.fs.impl.queryFileFromDataCursor
+import quasar.frontend.logicalplan.{constant, LogicalPlan}
 import quasar.physical.marklogic.qscript._
 import quasar.physical.marklogic.xcc._
 import quasar.physical.marklogic.xml.NCName
@@ -36,6 +35,9 @@ import quasar.physical.marklogic.xquery._, expr._
 import quasar.physical.marklogic.xquery.syntax._
 import quasar.qscript._
 
+import scala.util.control.NonFatal
+
+import com.marklogic.xcc.types.{XdmItem, XSString}
 import eu.timepit.refined.auto._
 import matryoshka._, Recursive.ops._, FunctorT.ops._
 import scalaz._, Scalaz._, concurrent._
@@ -60,6 +62,26 @@ object queryfile {
 
     def liftQP[F[_], A](fa: F[A])(implicit ev: F :<: S): QPlan[A] =
       lift(fa).into[S].liftM[PhaseResultT].liftM[FileSystemErrT]
+
+    def prettyPrint(xqy: XQuery): QPlan[Option[XQuery]] = {
+      val pp = SessionIO.resultsOf_(xdmp.prettyPrint(XQuery(s"'$xqy'"))).attempt flatMap {
+        case -\/(ex @ XQueryFailure(_, _)) =>
+          FileSystemError.qscriptPlanningFailed(QPlanner.InternalError(
+            "Malformed XQuery", Some(ex))).left[ImmutableArray[XdmItem]].point[SessionIO]
+
+        // NB: As this is only for pretty printing, if we fail for some other reason
+        //     just return an empty result.
+        case -\/(NonFatal(_)) => ImmutableArray.fromArray(Array[XdmItem]())
+                                   .right[FileSystemError]
+                                   .point[SessionIO]
+
+        case -\/(fatal)       => SessionIO.fail[FileSystemError \/ ImmutableArray[XdmItem]](fatal)
+        case \/-(r)           => r.right[FileSystemError].point[SessionIO]
+      }
+
+      EitherT(lift(pp).into[S].liftM[PhaseResultT])
+        .map(_.headOption collect { case s: XSString => XQuery(s.asString) })
+    }
 
     def lpToXQuery(lp: Fix[LogicalPlan]): QPlan[MainModule] = {
       type MLQScript[A] = QScriptShiftRead[Fix, A]
@@ -93,22 +115,19 @@ object queryfile {
                        repeatedly(C.coalesceSR[MLQScript](idPrism)) ⋙
                        repeatedly(Normalizable[MLQScript].normalizeF(_: MLQScript[Fix[MLQScript]])))
                      .transCata(rewrite.optimize(reflNT))
-
         _       <- logPhase(PhaseResult.tree("QScript (Optimized)", optmzed.cata(linearize).reverse))
         main    <- plan(optmzed).leftMap(mlerr => mlerr match {
                      case InvalidQName(s) =>
                        FileSystemError.planningFailed(lp, QPlanner.UnsupportedPlan(
                          // TODO: Change to include the QScript context when supported
-                         LogicalPlan.ConstantF(Data.Str(s)), Some(mlerr.shows)))
+                         constant(Data.Str(s)), Some(mlerr.shows)))
 
                      case UnrepresentableEJson(ejs, _) =>
                        FileSystemError.planningFailed(lp, QPlanner.NonRepresentableEJson(ejs.shows))
-
-                     case UnsupportedDatePart(n) =>
-                       FileSystemError.planningFailed(lp, QPlanner.UnsupportedFunction(
-                         n, "in planner".some))
                    })
-        _       <- logPhase(PhaseResult.detail("XQuery", main.render))
+        pp      <- prettyPrint(main.queryBody)
+        xqyLog  =  MainModule.queryBody.modify(pp getOrElse _)(main).render
+        _       <- logPhase(PhaseResult.detail("XQuery", xqyLog))
       } yield main
     }
 
@@ -118,35 +137,36 @@ object queryfile {
         $("length")  as SequenceType("xs:integer"),
         $("str")     as SequenceType("xs:string")
       ).as(SequenceType("xs:string")) { (padchar, length, str) =>
-        val (slen, padct, prefix) = ("$slen", "$padct", "$prefix")
+        val (slen, padct, prefix) = ($("slen"), $("padct"), $("prefix"))
         let_(
-          slen   -> fn.stringLength(str),
-          padct  -> fn.max(mkSeq_("0".xqy, length - slen.xqy)),
-          prefix -> fn.stringJoin(for_("$_" -> (1.xqy to padct.xqy)) return_ padchar, "".xs)
-        ) return_ fn.concat(prefix.xqy, str)
+          slen   := fn.stringLength(str),
+          padct  := fn.max(mkSeq_("0".xqy, length - (~slen))),
+          prefix := fn.stringJoin(for_($("_") in (1.xqy to ~padct)) return_ padchar, "".xs))
+        .return_(
+          fn.concat(~prefix, str))
       }
 
-    def saveTo[F[_]: NameGenerator: PrologW](dst: AFile, results: XQuery): F[XQuery] = {
+    def saveTo[F[_]: QNameGenerator: PrologW](dst: AFile, results: XQuery): F[XQuery] = {
       val dstDirUri = pathUri(asDir(dst))
 
       for {
-        ts     <- freshVar[F]
-        i      <- freshVar[F]
-        result <- freshVar[F]
-        fname  <- freshVar[F]
+        ts     <- freshName[F]
+        i      <- freshName[F]
+        result <- freshName[F]
+        fname  <- freshName[F]
         now    <- qscript.secondsSinceEpoch[F].apply(fn.currentDateTime)
-        dpart  <- lpadToLength[F]("0".xs, 8.xqy, xdmp.integerToHex(i.xqy))
+        dpart  <- lpadToLength[F]("0".xs, 8.xqy, xdmp.integerToHex(~i))
       } yield {
         let_(
-          ts   -> xdmp.integerToHex(xs.integer(now * 1000.xqy)),
-          "$_" -> xdmp.directoryCreate(dstDirUri.xs)
-        ) return_ {
+          ts     := xdmp.integerToHex(xs.integer(now * 1000.xqy)),
+          $("_") := xdmp.directoryCreate(dstDirUri.xs))
+        .return_ {
           for_(
-            // FIXME: Need to properly add positional variables to FLWOR
-            s"$result at $i" -> mkSeq_(results))
+            result at i in mkSeq_(results))
           .let_(
-            fname -> fn.concat(dstDirUri.xs, ts.xqy, dpart))
-          .return_(xdmp.documentInsert(fname.xqy, result.xqy))
+            fname := fn.concat(dstDirUri.xs, ~ts, dpart))
+          .return_(
+            xdmp.documentInsert(~fname, ~result))
         }
       }
     }

@@ -2,13 +2,12 @@
     "name": "handle let as project of select",
 
     "backends": {
-        "postgresql": "pending",
-        "couchbase":  "skip"
+        "postgresql": "pending"
     },
 
-    "data": ["cars.data", "zips.data"],
+    "data": ["cars.data", "smallZips.data"],
 
-    "query": "select (zips := select * from cars; select * from zips) as value from zips",
+    "query": "select (smallZips := select * from cars; select * from smallZips) as value from smallZips",
 
     "predicate": "containsExactly",
 

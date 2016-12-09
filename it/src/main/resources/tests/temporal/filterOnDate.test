@@ -2,8 +2,7 @@
     "name": "filter with date literals",
     "backends": {
         "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "marklogic":  "skip"
     },
     "data": "../days.data",
     "query": "select day from `../days`

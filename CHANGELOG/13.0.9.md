@@ -1,0 +1,1 @@
+- [#1637] fixes a bug where reductions would be concatenated incorrectly

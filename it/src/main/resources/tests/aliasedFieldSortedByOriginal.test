@@ -1,21 +1,26 @@
 {
     "name": "select aliased field sorted by original name",
     "backends": {
-        "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "postgresql": "pending"
     },
     "data": "zips.data",
-    "query": "SELECT state AS `Result Alias`, COUNT(*) FROM zips GROUP BY state ORDER BY state",
+    "query": "SELECT state AS `ResultAlias`, COUNT(*) as cnt FROM zips GROUP BY state ORDER BY state",
+    "ignoreFieldOrder": [
+        "couchbase",
+        "mongodb_2_6",
+        "mongodb_3_0",
+        "mongodb_3_2",
+        "mongodb_read_only"
+    ],
     "predicate": "containsAtLeast",
-    "expected": [{ "1":  195, "Result Alias": "AK" },
-                 { "1":  567, "Result Alias": "AL" },
-                 { "1":  578, "Result Alias": "AR" },
-                 { "1":  270, "Result Alias": "AZ" },
-                 { "1": 1516, "Result Alias": "CA" },
-                 { "1":  414, "Result Alias": "CO" },
-                 { "1":  263, "Result Alias": "CT" },
-                 { "1":   24, "Result Alias": "DC" },
-                 { "1":   53, "Result Alias": "DE" },
-                 { "1":  804, "Result Alias": "FL" }]
+    "expected": [{ "ResultAlias": "AK", "cnt":  195 },
+                 { "ResultAlias": "AL", "cnt":  567 },
+                 { "ResultAlias": "AR", "cnt":  578 },
+                 { "ResultAlias": "AZ", "cnt":  270 },
+                 { "ResultAlias": "CA", "cnt": 1516 },
+                 { "ResultAlias": "CO", "cnt":  414 },
+                 { "ResultAlias": "CT", "cnt":  263 },
+                 { "ResultAlias": "DC", "cnt":   24 },
+                 { "ResultAlias": "DE", "cnt":   53 },
+                 { "ResultAlias": "FL", "cnt":  804 }]
 }

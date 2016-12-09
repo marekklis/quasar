@@ -30,7 +30,6 @@ class RelationsSpec extends quasar.Qspec with TypeArbitrary {
   import quasar.Data.Bool
   import quasar.Data.Dec
   import quasar.Data.Int
-  import quasar.Data.Null
   import quasar.Data.Str
 
   val comparisonOps = Gen.oneOf(Eq, Neq, Lt, Lte, Gt, Gte)
@@ -96,50 +95,6 @@ class RelationsSpec extends quasar.Qspec with TypeArbitrary {
       val expr = Cond.tpe(Func.Input3(Type.Bool, t1, t2))
       expr must beSuccessful(Type.lub(t1, t2))
     }
-
-    "fold coalesce with right null type" >> prop { (t1 : Type) =>
-      val expr = Coalesce.tpe(Func.Input2(t1, Type.Null))
-      expr must beSuccessful(t1 match {
-        case Const(Null) => Type.Null
-        case _           => t1
-      })
-    }
-
-    "fold coalesce with left null type" >> prop { (t2 : Type) =>
-      val expr = Coalesce.tpe(Func.Input2(Type.Null, t2))
-      expr must beSuccessful(t2)
-    }
-
-    "fold coalesce with right null value" >> prop { (t1 : Type) =>
-      val expr = Coalesce.tpe(Func.Input2(t1, Const(Null)))
-      expr must beSuccessful(t1 match {
-        case Type.Null => Const(Null)
-        case _         => t1
-      })
-    }
-
-    "fold coalesce with left null value" >> prop { (t2 : Type) =>
-      val expr = Coalesce.tpe(Func.Input2(Const(Null), t2))
-      expr must beSuccessful(t2)
-    }
-
-    "fold coalesce with left value" >> prop { (t2 : Type) =>
-      val expr = Coalesce.tpe(Func.Input2(Const(Int(3)), t2))
-      expr must beSuccessful(Const(Int(3)))
-    }
-
-    "find lub for coalesce with int" >> {
-      val expr = Coalesce.tpe(Func.Input2(Type.Int, Type.Int))
-      expr must beSuccessful(Type.Int)
-    }
-
-    "find lub for coalesce with arbitrary args" >> prop { (t1: Type, t2: Type) =>
-      val expr = Coalesce.tpe(Func.Input2(t1, t2))
-      if (t1 == Type.Null || t1 == Const(Null))
-        expr must beSuccessful(t2)
-      else
-        expr must beSuccessful(Type.lub(t1, t2))
-    }.pendingUntilFixed // When t1 is Const, we need to match that
 
     "flip comparison ops" >> Prop.forAll(comparisonOps, arbitrary[BigInt], arbitrary[BigInt]) {
         case (func, left, right) =>

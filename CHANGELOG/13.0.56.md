@@ -1,0 +1,1 @@
+- Round all 'loc' values in the zips and smallZips datasets for consistency in tests.

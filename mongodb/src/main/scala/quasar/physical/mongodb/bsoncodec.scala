@@ -26,7 +26,7 @@ import quasar._, Planner._
 import matryoshka._
 import matryoshka.patterns._
 import monocle.Prism
-import org.threeten.bp.{LocalDate, LocalDateTime, ZoneOffset}
+import java.time.{LocalDate, LocalDateTime, ZoneOffset}
 import scalaz._, Scalaz._
 import scodec.bits.ByteVector
 

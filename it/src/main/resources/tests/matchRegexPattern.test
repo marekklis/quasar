@@ -2,8 +2,7 @@
     "name": "match regex pattern",
     "backends": {
         "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "couchbase":  "skipCI"
     },
     "data": "zips.data",
     "query": "select city from zips where city ~ \"OULD.{0,2} CIT\"",

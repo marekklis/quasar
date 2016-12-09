@@ -17,24 +17,31 @@
 package quasar.physical.couchbase.planner
 
 import quasar.Predef._
-import quasar.contrib.matryoshka._
-import quasar.fp._, eitherT._, ski.κ
 import quasar.NameGenerator
-import quasar.PhaseResult.Detail
-import quasar.physical.couchbase._
-import quasar.physical.couchbase.N1QL._
+import quasar.common.PhaseResult.detail
+import quasar.contrib.matryoshka._
+import quasar.fp._, eitherT._
+import quasar.fp.ski.κ
+import quasar.physical.couchbase._, N1QL._
 import quasar.physical.couchbase.planner.Planner._
-import quasar.qscript, qscript._
+import quasar.qscript._
 
 import matryoshka._
 import scalaz._, Scalaz._
 
-final class EquiJoinPlanner[F[_]: Monad: NameGenerator, T[_[_]]: Recursive: ShowT]
+// Join document by field that is not a primary key?
+// ╰─ http://stackoverflow.com/a/39264955/343274
+// ╰─ https://forums.couchbase.com/t/n1ql-joins-on-document-fields/8418/3
+
+// When falling back to Map/Reduce can quickly arrive at "error (reduction too large)"
+// ╰─ https://github.com/couchbase/couchstore/search?utf8=%E2%9C%93&q=MAX_REDUCTION_SIZE
+
+final class EquiJoinPlanner[F[_]: Monad: NameGenerator, T[_[_]]: Recursive: Corecursive: ShowT]
   extends Planner[F, EquiJoin[T, ?]] {
 
   def plan: AlgebraM[M, EquiJoin[T, ?], N1QL] = {
     case EquiJoin(src, lBranch, rBranch, lKey, rKey, f, combine) =>
-    for {
+    (for {
       tmpName <- genName[M]
       sN1ql   =  n1ql(src)
       lbN1ql  <- freeCataM(lBranch)(interpretM(
@@ -52,7 +59,7 @@ final class EquiJoinPlanner[F[_]: Monad: NameGenerator, T[_[_]]: Recursive: Show
       cN1ql   <- freeCataM(combine)(interpretM(
                    i => partialQueryString(i.shows).point[M],
                    mapFuncPlanner[F, T].plan))
-      _       <- prtell[M](Vector(Detail(
+      _       <- prtell[M](Vector(detail(
                    "N1QL EquiJoin",
                    s"""  src:     $sN1ql
                       |  lBranch: $lbN1ql
@@ -62,7 +69,8 @@ final class EquiJoinPlanner[F[_]: Monad: NameGenerator, T[_[_]]: Recursive: Show
                       |  f:       $f
                       |  combine: $cN1ql
                       |  n1ql:    ???""".stripMargin('|'))))
-    } yield partialQueryString("???EquiJoin???")
+    } yield ()) *>
+    unimplementedP("EquiJoin")
 
   }
 }

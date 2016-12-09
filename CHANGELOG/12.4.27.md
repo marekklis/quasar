@@ -1,0 +1,2 @@
+- Couchbase: Increase queryTimeout
+- Favor DateTimeFormatter over toString in StdLibSpec

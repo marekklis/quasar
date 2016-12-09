@@ -2,22 +2,21 @@
     "name": "convert values from strings",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
-    "data": "zips.data",
-    "query": "select integer(_id), decimal(_id) from zips",
+    "data": "smallZips.data",
+    "query": "select integer(_id) as intId, decimal(_id) as decId from smallZips",
     "predicate": "containsAtLeast",
+    "ignoreFieldOrder": [ "couchbase" ],
     "expected": [
-        { "0": 1001, "1": 1001.0 },
-        { "0": 1002, "1": 1002.0 },
-        { "0": 1005, "1": 1005.0 },
-        { "0": 1007, "1": 1007.0 },
-        { "0": 1008, "1": 1008.0 },
-        { "0": 1010, "1": 1010.0 },
-        { "0": 1011, "1": 1011.0 },
-        { "0": 1012, "1": 1012.0 },
-        { "0": 1013, "1": 1013.0 },
-        { "0": 1020, "1": 1020.0 }]
+        { "intId": 1001, "decId": 1001.0 },
+        { "intId": 1002, "decId": 1002.0 },
+        { "intId": 1005, "decId": 1005.0 },
+        { "intId": 1007, "decId": 1007.0 },
+        { "intId": 1008, "decId": 1008.0 },
+        { "intId": 1010, "decId": 1010.0 },
+        { "intId": 1011, "decId": 1011.0 },
+        { "intId": 1012, "decId": 1012.0 },
+        { "intId": 1013, "decId": 1013.0 },
+        { "intId": 1020, "decId": 1020.0 }]
 }

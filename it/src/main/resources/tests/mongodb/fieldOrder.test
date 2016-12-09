@@ -1,0 +1,24 @@
+{
+    "name": "reduced expressions which trigger bad field ordering in MongoDB (#598)",
+
+    "backends": {
+        "mongodb_2_6":       "pending",
+        "mongodb_3_0":       "pending",
+        "mongodb_read_only": "pending",
+        "mongodb_3_2":       "pending",
+        "postgresql":        "skip",
+        "marklogic":         "skip",
+        "couchbase":         "skip"
+    },
+
+    "data": "../zips.data",
+
+    "query": "select count(*)/1000, 0 from `../zips` limit 5",
+
+    "predicate": "equalsExactly",
+    "expected": [{ "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 },
+                 { "0": 29.353, "1": 0 }]
+}

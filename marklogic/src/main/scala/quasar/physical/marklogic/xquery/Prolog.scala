@@ -28,6 +28,7 @@ sealed abstract class Prolog {
   import Prolog._
 
   def render: String = this match {
+    case DefColl(dc)   => dc.render
     case FuncDecl(fd)  => fd.render
     case ModImport(mi) => mi.render
     case NSDecl(ns)    => ns.render
@@ -35,11 +36,16 @@ sealed abstract class Prolog {
 }
 
 object Prolog {
+  final case class DefColl(defaultCollation: DefaultCollationDecl) extends Prolog
   final case class FuncDecl(functionDecl: FunctionDecl) extends Prolog
   final case class ModImport(moduleImport: ModuleImport) extends Prolog
   final case class NSDecl(namespaceDecl: NamespaceDecl) extends Prolog
 
   val Separator: String = ";"
+
+  val defColl = Prism.partial[Prolog, DefaultCollationDecl] {
+    case DefColl(dc) => dc
+  } (DefColl)
 
   val funcDecl = Prism.partial[Prolog, FunctionDecl] {
     case FuncDecl(fd) => fd
@@ -57,10 +63,11 @@ object Prolog {
     Getter(_.render)
 
   implicit val order: Order[Prolog] =
-    Order.orderBy(p => (funcDecl.getOption(p), modImport.getOption(p), nsDecl.getOption(p)))
+    Order.orderBy(p => (funcDecl.getOption(p), defColl.getOption(p), modImport.getOption(p), nsDecl.getOption(p)))
 
   implicit val show: Show[Prolog] =
     Show.shows {
+      case DefColl(dc)   => dc.shows
       case FuncDecl(fd)  => fd.shows
       case ModImport(mi) => mi.shows
       case NSDecl(ns)    => ns.shows

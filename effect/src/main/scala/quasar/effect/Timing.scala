@@ -18,7 +18,7 @@ package quasar.effect
 
 import quasar.Predef._
 
-import org.threeten.bp.{Duration, Instant}
+import java.time.{Duration, Instant}
 import scalaz._
 import scalaz.concurrent.Task
 

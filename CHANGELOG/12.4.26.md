@@ -1,0 +1,1 @@
+- Couchbase: Travis enablement

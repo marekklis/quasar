@@ -16,25 +16,21 @@
 
 package quasar.std
 
-import quasar.Func
 import quasar.Predef._
-import quasar.TypeArbitrary
+import quasar.{Func, SemanticError, Type, TypeArbitrary}, Type.Const
+import quasar.frontend.fixpoint.lpf
+import quasar.frontend.logicalplan._
 
 import matryoshka.Fix
 import org.scalacheck.Arbitrary
-import org.threeten.bp.{Instant, Duration}
+import java.time.{Instant, Duration}
 import scalaz.ValidationNel
 import scalaz.Validation.FlatMap._
 import shapeless._
 
 class MathSpec extends quasar.Qspec with TypeArbitrary {
   import MathLib._
-  import quasar.Type
-  import quasar.Type.Const
-  import quasar.Type.Obj
   import quasar.Data._
-  import quasar.SemanticError
-  import quasar.LogicalPlan, LogicalPlan._
 
   "MathLib" should {
     "type simple add with ints" in {
@@ -73,13 +69,13 @@ class MathSpec extends quasar.Qspec with TypeArbitrary {
     }
 
     "simplify add with zero" in {
-      Add.simplify(Add(LogicalPlan.Constant(Int(0)), Free('x))) should
-        beSome(FreeF[Fix[LogicalPlan]]('x))
+      Add.simplify(Add(lpf.constant(Int(0)), lpf.free('x))) should
+        beSome(Free[Fix[LogicalPlan]]('x))
     }
 
     "simplify add with Dec zero" in {
-      Add.simplify(Add(Free('x), LogicalPlan.Constant(Dec(0.0)))) should
-        beSome(FreeF[Fix[LogicalPlan]]('x))
+      Add.simplify(Add(lpf.free('x), lpf.constant(Dec(0.0)))) should
+        beSome(Free[Fix[LogicalPlan]]('x))
     }
 
     "eliminate multiply by dec zero (on the right)" >> prop { (c : Const) =>
@@ -170,8 +166,8 @@ class MathSpec extends quasar.Qspec with TypeArbitrary {
     }
 
     "simplify expression raised to 1st power" in {
-      Power.simplify(Power(Free('x), Constant(Int(1)))) should
-        beSome(FreeF[Fix[LogicalPlan]]('x))
+      Power.simplify(Power(lpf.free('x), lpf.constant(Int(1)))) should
+        beSome(free[Fix[LogicalPlan]]('x))
     }
 
     "fold a complex expression (10-4)/3 + (5*8)" in {
@@ -195,7 +191,7 @@ class MathSpec extends quasar.Qspec with TypeArbitrary {
     }
 
     "fail with object and int constant" in {
-      val expr = Add.tpe(Func.Input2(Obj(Map("x" -> Type.Int), None), TOne()))
+      val expr = Add.tpe(Func.Input2(Type.Obj(Map("x" -> Type.Int), None), TOne()))
       expr should beFailing
     }
 

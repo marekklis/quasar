@@ -2,25 +2,24 @@
     "name": "case-insensitive regex in projections",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "largeZips.data",
-    "query": "select city, city ~* \"boU\", city !~* \"Bou\" from largeZips",
+    "query": "select city, city ~* \"boU\" as a, city !~* \"Bou\" as b from largeZips",
     "NB": "Should also test `doesNotContain`, see SD-577.",
     "predicate": "containsAtLeast",
+    "ignoreFieldOrder": [ "couchbase" ],
     "expected": [
-        { "city": "CUSHMAN",          "1": false, "2": true  },
-        { "city": "CHICOPEE",         "1": false, "2": true  },
-        { "city": "HOLYOKE",          "1": false, "2": true  },
-        { "city": "FLORENCE",         "1": false, "2": true  },
-        { "city": "MONTGOMERY",       "1": false, "2": true  },
-        { "city": "WEST SPRINGFIELD", "1": false, "2": true  },
-        { "city": "SPRINGFIELD",      "1": false, "2": true  },
-        { "city": "PITTSFIELD",       "1": false, "2": true  },
-        { "city": "FITCHBURG",        "1": false, "2": true  },
-        { "city": "MELBOURNE",        "1": true,  "2": false },
-        { "city": "BOUNTIFUL",        "1": true,  "2": false },
-        { "city": "BOULDER",          "1": true,  "2": false }]
+        { "city": "CUSHMAN",          "a": false, "b": true  },
+        { "city": "CHICOPEE",         "a": false, "b": true  },
+        { "city": "HOLYOKE",          "a": false, "b": true  },
+        { "city": "FLORENCE",         "a": false, "b": true  },
+        { "city": "MONTGOMERY",       "a": false, "b": true  },
+        { "city": "WEST SPRINGFIELD", "a": false, "b": true  },
+        { "city": "SPRINGFIELD",      "a": false, "b": true  },
+        { "city": "PITTSFIELD",       "a": false, "b": true  },
+        { "city": "FITCHBURG",        "a": false, "b": true  },
+        { "city": "MELBOURNE",        "a": true,  "b": false },
+        { "city": "BOUNTIFUL",        "a": true,  "b": false },
+        { "city": "BOULDER",          "a": true,  "b": false }]
 }

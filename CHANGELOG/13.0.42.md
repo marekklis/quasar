@@ -1,0 +1,1 @@
+- Fix delete field planning for MarkLogic

@@ -3,9 +3,10 @@
 
   "backends": {
     "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "couchbase":  "skipCI"
   },
+
+  "data": "zips.data",
 
   "query": "select city, state from zips where city not like \"BOULD%\" and pop = 18174",
 

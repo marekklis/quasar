@@ -16,25 +16,23 @@
 
 package quasar.sql
 
-import quasar.{Data, LogicalPlan}
+import quasar.Predef._
+import quasar.Data
+import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 import quasar.std.StdLib._
 
-import matryoshka.Fix
+import matryoshka._
 
-sealed trait JoinDir {
-  def projectFrom(t: Fix[LogicalPlan]): Fix[LogicalPlan]
+sealed abstract class JoinDir(val name: String) {
+  import structural.ObjectProject
+
+  val data: Data = Data.Str(name)
+  def const[T[_[_]]: Corecursive]: T[LP] = constant[T[LP]](data).embed
+  def projectFrom[T[_[_]]: Corecursive](lp: T[LP]): T[LP] =
+    ObjectProject(lp, const).embed
 }
 
 object JoinDir {
-  import structural._
-
-  final case object Left extends JoinDir {
-    def projectFrom(t: Fix[LogicalPlan]) =
-      Fix(ObjectProject(t, LogicalPlan.Constant(Data.Str("left"))))
-  }
-
-  final case object Right extends JoinDir {
-    def projectFrom(t: Fix[LogicalPlan]) =
-      Fix(ObjectProject(t, LogicalPlan.Constant(Data.Str("right"))))
-  }
+  final case object Left extends JoinDir("left")
+  final case object Right extends JoinDir("right")
 }

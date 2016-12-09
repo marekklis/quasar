@@ -1,0 +1,1 @@
+- Document prerequisites and limitations of the MarkLogic connector.

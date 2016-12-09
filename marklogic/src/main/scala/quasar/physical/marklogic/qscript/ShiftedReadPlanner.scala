@@ -16,28 +16,52 @@
 
 package quasar.physical.marklogic.qscript
 
-import quasar.NameGenerator
+import quasar.Predef._
+import quasar.fp.ski.κ
 import quasar.physical.marklogic.xquery._
 import quasar.physical.marklogic.xquery.syntax._
 import quasar.qscript._
 
 import matryoshka._
 import pathy.Path._
-import scalaz._
+import scalaz._, Scalaz._
 
-private[qscript] final class ShiftedReadPlanner[F[_]: NameGenerator: PrologW]
+private[qscript] final class ShiftedReadPlanner[F[_]: QNameGenerator: PrologW]
   extends MarkLogicPlanner[F, Const[ShiftedRead, ?]] {
+
+  import expr._, axes.child
 
   val plan: AlgebraM[F, Const[ShiftedRead, ?], XQuery] = {
     case Const(ShiftedRead(absFile, idStatus)) =>
-      val asDir = fileParent(absFile) </> dir(fileName(absFile).value)
-      val dirRepr = posixCodec.printPath(asDir)
+      val uri    = posixCodec.printPath(fileParent(absFile) </> dir(fileName(absFile).value))
+      val dirQry = cts.directoryQuery(uri.xs, "1".xs)
 
-      val includeId = idStatus match {
-        case IncludeId => fn.True
-        case ExcludeId => fn.False
+      idStatus match {
+        case IncludeId => search(dirQry, doc => mkId(fn.documentUri(doc)).some)
+        case ExcludeId => search(dirQry, κ(None))
+        case IdOnly    => freshName[F] map (u =>
+                            for_(u in cts.uris(start = emptySeq, query = dirQry)) return_ mkId(~u))
       }
-
-      qscript.shiftedRead apply (dirRepr.xs, includeId)
   }
+
+  ////
+
+  private def mkId(uriStr: XQuery): XQuery =
+    fn.concat("_".xs, xdmp.hmacSha1("quasar".xs, uriStr))
+
+  private def search(ctsQuery: XQuery, extractId: XQuery => Option[XQuery]): F[XQuery] =
+    for {
+      d     <- freshName[F]
+      c     <- freshName[F]
+      b     <- freshName[F]
+      xform <- json.transformFromJson[F](~c)
+      incId <- extractId(~d) traverse (id => ejson.seqToArray_[F](mkSeq_(id, ~b)))
+    } yield {
+      for_(
+        d in cts.search(fn.doc(), ctsQuery))
+      .let_(
+        c := ~d `/` child.node(),
+        b := (if_ (json.isObject(~c)) then_ xform else_ ~c))
+      .return_(incId getOrElse ~b)
+    }
 }

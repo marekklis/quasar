@@ -19,7 +19,6 @@ package quasar.sql
 import quasar.Predef._
 import quasar.fp.ski._
 import quasar.fp._
-import quasar.std._
 
 import scala.util.parsing.combinator._
 import scala.util.parsing.combinator.lexical._
@@ -223,16 +222,15 @@ private[sql] class SQLParser[T[_[_]]: Recursive: Corecursive]
 
   def between_suffix: Parser[T[Sql] => T[Sql]] =
     keyword("between") ~ default_expr ~ keyword("and") ~ default_expr ^^ {
-      case _ ~ lower ~ _ ~ upper =>
-        lhs => invokeFunction(StdLib.relations.Between.name,
-          List(lhs, lower, upper)).embed
+      case kw ~ lower ~ _ ~ upper =>
+        lhs => invokeFunction(kw, List(lhs, lower, upper)).embed
     }
 
   def in_suffix: Parser[T[Sql] => T[Sql]] =
     keyword("in") ~ default_expr ^^ { case _ ~ a => In(_, a).embed }
 
   private def LIKE(l: T[Sql], r: T[Sql], esc: Option[T[Sql]]) =
-    invokeFunction(StdLib.string.Like.name,
+    invokeFunction("like",
       List(l, r, esc.getOrElse(stringLiteral[T[Sql]]("\\").embed))).embed
 
   def like_suffix: Parser[T[Sql] => T[Sql]] =
@@ -266,16 +264,16 @@ private[sql] class SQLParser[T[_[_]]: Recursive: Corecursive]
   def default_expr: Parser[T[Sql]] =
     concat_expr * (
       op("~") ^^^ ((l: T[Sql], r: T[Sql]) =>
-        invokeFunction(StdLib.string.Search.name,
+        invokeFunction("search",
           List(l, r, boolLiteral[T[Sql]](false).embed)).embed) |
         op("~*") ^^^ ((l: T[Sql], r: T[Sql]) =>
-          invokeFunction(StdLib.string.Search.name,
+          invokeFunction("search",
             List(l, r, boolLiteral[T[Sql]](true).embed)).embed) |
         op("!~") ^^^ ((l: T[Sql], r: T[Sql]) =>
-          Not(invokeFunction(StdLib.string.Search.name,
+          Not(invokeFunction("search",
             List(l, r, boolLiteral[T[Sql]](false).embed)).embed).embed) |
         op("!~*") ^^^ ((l: T[Sql], r: T[Sql]) =>
-          Not(invokeFunction(StdLib.string.Search.name,
+          Not(invokeFunction("search",
             List(l, r, boolLiteral[T[Sql]](true).embed)).embed).embed) |
         op("~~") ^^^ ((l: T[Sql], r: T[Sql]) => LIKE(l, r, None)) |
         op("!~~") ^^^ ((l: T[Sql], r: T[Sql]) => Not(LIKE(l, r, None)).embed))
@@ -338,13 +336,7 @@ private[sql] class SQLParser[T[_[_]]: Recursive: Corecursive]
   def paren_list: Parser[List[T[Sql]]] = op("(") ~> repsep(expr, op(",")) <~ op(")")
 
   def function_expr: Parser[T[Sql]] =
-    ident ~ paren_list ^^ {
-      // TODO: `is_null` is deprecated, but leaving this here until we figure
-      //       out how to message deprecation to users.
-      case a ~ List(x) if a.toLowerCase ≟ "is_null" =>
-        Eq(x, nullLiteral[T[Sql]]().embed).embed
-      case a ~ xs => invokeFunction(a, xs).embed
-    }
+    ident ~ paren_list ^^ { case a ~ xs => invokeFunction(a, xs).embed }
 
   def primary_expr: Parser[T[Sql]] =
     case_expr |
@@ -441,7 +433,7 @@ private[sql] class SQLParser[T[_[_]]: Recursive: Corecursive]
     keyword("order") ~> keyword("by") ~> rep1sep(defined_expr ~ opt(keyword("asc") | keyword("desc")) ^^ {
       case i ~ (Some("asc") | None) => (ASC, i)
       case i ~ Some("desc") => (DESC, i)
-    }, op(",")) ^^ (OrderBy(_))
+    }, op(",")) ^? { case o :: os => OrderBy(NonEmptyList(o, os: _*)) }
 
   def expr: Parser[T[Sql]] = let_expr
 

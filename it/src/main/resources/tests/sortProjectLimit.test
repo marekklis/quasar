@@ -2,9 +2,7 @@
     "name": "sort, project, and limit",
 
     "backends": {
-        "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "postgresql": "pending"
     },
 
     "data": "zips.data",

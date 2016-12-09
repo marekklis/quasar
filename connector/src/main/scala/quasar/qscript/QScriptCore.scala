@@ -17,7 +17,8 @@
 package quasar.qscript
 
 import quasar.Predef._
-import quasar.{NonTerminal, Terminal, RenderTree}, RenderTree.ops._
+import quasar.{NonTerminal, Terminal, RenderTree, RenderTreeT}, RenderTree.ops._
+import quasar.common.SortDir
 import quasar.contrib.matryoshka._
 import quasar.fp._
 
@@ -51,12 +52,16 @@ object ReduceIndex {
   * then unioned.
   *
   * `struct` is an expression that evaluates to an array or object, which is
-  * then “exploded” into multiple values. `repair` is applied across the new
-  * set, integrating the exploded values into the original set.
+  * then “exploded” into multiple values. `idStatus` indicates what each of
+  * those exploded values should look like (either just the value, just the “id”
+  * (i.e., the key or index), or a 2-element array of key and value). `repair`
+  * is applied across the new set, integrating the exploded values into the
+  * original set.
   *
   * E.g., in:
   *     LeftShift(x,
   *               ProjectField(SrcHole, "bar"),
+  *               ExcludeId,
   *               ConcatMaps(LeftSide, MakeMap("bar", RightSide)))```
   * If `x` consists of things that look like `{ foo: 7, bar: [1, 2, 3] }`, then
   * that’s what [[LeftSide]] is. And [[RightSide]] is values like `1`, `2`, and
@@ -70,6 +75,7 @@ object ReduceIndex {
 @Lenses final case class LeftShift[T[_[_]], A](
   src: A,
   struct: FreeMap[T],
+  idStatus: IdStatus,
   repair: JoinFunc[T])
     extends QScriptCore[T, A]
 
@@ -101,7 +107,7 @@ object ReduceIndex {
 @Lenses final case class Sort[T[_[_]], A](
   src: A,
   bucket: FreeMap[T],
-  order: List[(FreeMap[T], SortDir)])
+  order: NonEmptyList[(FreeMap[T], SortDir)])
     extends QScriptCore[T, A]
 
 /** Creates a new dataset that contains the elements from the datasets created
@@ -138,8 +144,8 @@ object QScriptCore {
       def apply[A](eq: Equal[A]) =
         Equal.equal {
           case (Map(a1, f1), Map(a2, f2)) => f1 ≟ f2 && eq.equal(a1, a2)
-          case (LeftShift(a1, s1, r1), LeftShift(a2, s2, r2)) =>
-            eq.equal(a1, a2) && s1 ≟ s2 && r1 ≟ r2
+          case (LeftShift(a1, s1, i1, r1), LeftShift(a2, s2, i2, r2)) =>
+            eq.equal(a1, a2) && s1 ≟ s2 && i1 ≟ i2 && r1 ≟ r2
           case (Reduce(a1, b1, f1, r1), Reduce(a2, b2, f2, r2)) =>
             b1 ≟ b2 && f1 ≟ f2 && r1 ≟ r2 && eq.equal(a1, a2)
           case (Sort(a1, b1, o1), Sort(a2, b2, o2)) =>
@@ -160,7 +166,7 @@ object QScriptCore {
         f: A => G[B]) =
         fa match {
           case Map(a, func)               => f(a) ∘ (Map[T, B](_, func))
-          case LeftShift(a, s, r)         => f(a) ∘ (LeftShift(_, s, r))
+          case LeftShift(a, s, i, r)      => f(a) ∘ (LeftShift(_, s, i, r))
           case Reduce(a, b, func, repair) => f(a) ∘ (Reduce(_, b, func, repair))
           case Sort(a, b, o)              => f(a) ∘ (Sort(_, b, o))
           case Union(a, l, r)             => f(a) ∘ (Union(_, l, r))
@@ -172,48 +178,44 @@ object QScriptCore {
 
   implicit def show[T[_[_]]: ShowT]: Delay[Show, QScriptCore[T, ?]] =
     new Delay[Show, QScriptCore[T, ?]] {
+      val f1: Show[JoinFunc[T]] = implicitly
+
       def apply[A](s: Show[A]): Show[QScriptCore[T, A]] =
         Show.show {
           case Map(src, mf) => Cord("Map(") ++
-            s.show(src) ++ Cord(",") ++
+            s.show(src) ++ Cord(", ") ++
             mf.show ++ Cord(")")
-          case LeftShift(src, struct, repair) => Cord("LeftShift(") ++
-            s.show(src) ++ Cord(",") ++
-            struct.show ++ Cord(",") ++
+          case LeftShift(src, struct, id, repair) => Cord("LeftShift(") ++
+            s.show(src) ++ Cord(", ") ++
+            struct.show ++ Cord(", ") ++
+            id.show ++ Cord(", ") ++
             repair.show ++ Cord(")")
           case Reduce(a, b, red, rep) => Cord("Reduce(") ++
-            s.show(a) ++ Cord(",") ++
-            b.show ++ Cord(",") ++
-            red.show ++ Cord(",") ++
+            s.show(a) ++ Cord(", ") ++
+            b.show ++ Cord(", ") ++
+            red.show ++ Cord(", ") ++
             rep.show ++ Cord(")")
           case Sort(a, b, o) => Cord("Sort(") ++
-            s.show(a) ++ Cord(",") ++
-            b.show ++ Cord(",") ++
+            s.show(a) ++ Cord(", ") ++
+            b.show ++ Cord(", ") ++
             o.show ++ Cord(")")
           case Union(src, l, r) => Cord("Union(") ++
-            s.show(src) ++ Cord(",") ++
-            l.show ++ Cord(",") ++
+            s.show(src) ++ Cord(", ") ++
+            l.show ++ Cord(", ") ++
             r.show ++ Cord(")")
           case Filter(a, func) => Cord("Filter(") ++
-            s.show(a) ++ Cord(",") ++
+            s.show(a) ++ Cord(", ") ++
             func.show ++ Cord(")")
           case Subset(a, f, sel, c) => Cord("Subset(") ++
-            s.show(a) ++ Cord(",") ++
-            f.show ++ Cord(",") ++
-            sel.show ++ Cord(",") ++
+            s.show(a) ++ Cord(", ") ++
+            f.show ++ Cord(", ") ++
+            sel.show ++ Cord(", ") ++
             c.show ++ Cord(")")
           case Unreferenced() => Cord("Unreferenced")
         }
     }
 
-  // TODO: use the RenderTree for FreeQS, which contains QScriptTotal, which
-  // contains QScriptCore...
-  implicit def renderTree[T[_[_]]: ShowT](implicit
-      // FQ:  RenderTree[FreeQS[T]],
-      FM:  RenderTree[FreeMap[T]],
-      JF:  RenderTree[JoinFunc[T]],
-      RF:  RenderTree[ReduceFunc[FreeMap[T]]],
-      FMR: RenderTree[FreeMapA[T, ReduceIndex]])
+  implicit def renderTree[T[_[_]]: RenderTreeT: ShowT]
       : Delay[RenderTree, QScriptCore[T, ?]] =
     new Delay[RenderTree, QScriptCore[T, ?]] {
       def apply[A](RA: RenderTree[A]): RenderTree[QScriptCore[T, A]] =
@@ -227,31 +229,32 @@ object QScriptCore {
             v match {
               case Map(src, f) =>
                 NonTerminal("Map" :: nt, None,
-                  RA.render(src) :: FM.render(f) :: Nil)
-              case LeftShift(src, struct, repair) =>
+                  RA.render(src) :: f.render :: Nil)
+              case LeftShift(src, struct, id, repair) =>
                 NonTerminal("LeftShift" :: nt, None,
                   RA.render(src) ::
                     nested("Struct", struct) ::
+                    nested("IdStatus", id) ::
                     nested("Repair", repair) ::
                     Nil)
               case Reduce(src, bucket, reducers, repair) =>
                 NonTerminal("Reduce" :: nt, None,
                   RA.render(src) ::
                     nested("Bucket", bucket) ::
-                    NonTerminal("Reducers" :: nt, None, reducers.map(RF.render(_))) ::
+                    NonTerminal("Reducers" :: nt, None, reducers.map(_.render)) ::
                     nested("Repair", repair) ::
                     Nil)
               case Sort(src, bucket, order) =>
                 NonTerminal("Sort" :: nt, None,
                   RA.render(src) :: nested("Bucket", bucket) ::
                     NonTerminal("Order" :: "Sort" :: nt, None, order.map { case (x, dir) =>
-                      NonTerminal(dir.shows :: "Sort" :: nt, None, nested("By", x) :: Nil) }) ::
+                      NonTerminal(dir.shows :: "Sort" :: nt, None, nested("By", x) :: Nil) }.toList) ::
                     Nil)
               case Union(src, lBranch, rBranch) =>
                 NonTerminal("Union" :: nt, None, List(
                   RA.render(src),
-                  Terminal("LeftBranch" :: nt, lBranch.shows.some),
-                  Terminal("RightBranch" :: nt, rBranch.shows.some)))
+                  nested("LeftBranch", lBranch),
+                  nested("RightBranch", rBranch)))
               case Filter(src, func) =>
                 NonTerminal("Filter" :: nt, None, List(
                   RA.render(src),
@@ -259,8 +262,8 @@ object QScriptCore {
               case Subset(src, from, sel, count) =>
                 NonTerminal("Subset" :: nt, sel.shows.some, List(
                   RA.render(src),
-                  Terminal("From" :: nt, from.shows.some),
-                  Terminal("Count" :: nt, count.shows.some)))
+                  nested("From", from),
+                  nested("Count", count)))
               case Unreferenced()             =>
                 Terminal("Unreferenced" :: nt, None)
             }
@@ -295,13 +298,13 @@ object QScriptCore {
           case (
             Reduce(_, bucket1, func1, rep1),
             Reduce(_, bucket2, func2, rep2)) =>
-            val mapL = bucket1 >> left
-            val mapR = bucket2 >> right
+            val mapL = norm.freeMF(bucket1 >> left)
+            val mapR = norm.freeMF(bucket2 >> right)
 
             (mapL ≟ mapR).option {
-              val funcL = func1.map(_.map(_ >> left))
-              val funcR = func1.map(_.map(_ >> right))
-              val (newRep, lrep, rrep) = concat(rep1, rep2.map(_.incr(func1.length)))
+              val funcL = func1 ∘ (_ ∘ (_ >> left))
+              val funcR = func2 ∘ (_ ∘ (_ >> right))
+              val (newRep, lrep, rrep) = concat(rep1, rep2 ∘ (_.incr(func1.length)))
 
               SrcMerge[QScriptCore[IT, ExternallyManaged], FreeMap[IT]](
                 Reduce(Extern, mapL, funcL ++ funcR, newRep),
@@ -310,8 +313,8 @@ object QScriptCore {
             }
 
           case (
-            LeftShift(_, struct1, repair1),
-            LeftShift(_, struct2, repair2)) =>
+            LeftShift(_, struct1, id1, repair1),
+            LeftShift(_, struct2, id2, repair2)) =>
             val (repair, repL, repR) = concat(repair1, repair2)
 
             val lFunc: FreeMap[IT] = norm.freeMF(struct1 >> left)
@@ -327,31 +330,21 @@ object QScriptCore {
               projL: Option[FreeMap[IT]],
               projR: Option[FreeMap[IT]]) =
               SrcMerge[QScriptCore[IT, ExternallyManaged], FreeMap[IT]](
-                LeftShift(Extern, struct, repair),
+                LeftShift(Extern, struct, id1 |+| id2, repair),
                 projL.fold(repL)(repL >> _),
-                projR.fold(repR)(repR >> _)).some
+                projR.fold(repR)(repR >> _))
 
-            (lFunc, rFunc) match {
-              case (lm, rm) if lm ≟ rm =>
-                constructMerge(lm, None, None)
+            (lFunc ≟ rFunc).option(
+              (id1, id2) match {
+                case (ExcludeId, IncludeId) => constructMerge(lFunc, proj1.some, None)
+                case (IncludeId, ExcludeId) => constructMerge(lFunc, None, proj1.some)
+                case (ExcludeId, IdOnly)    => constructMerge(lFunc, proj1.some, proj0.some)
+                case (IdOnly,    ExcludeId) => constructMerge(lFunc, proj0.some, proj1.some)
+                case (IdOnly,    IncludeId) => constructMerge(lFunc, proj0.some, None)
+                case (IncludeId, IdOnly)    => constructMerge(lFunc, None, proj0.some)
+                case (_,         _)         => constructMerge(lFunc, None, None)
+              })
 
-              case (lm, rm) =>
-                (lm.resume, rm.resume) match {
-                  case (-\/(l), -\/(zip @ MapFuncs.ZipMapKeys(r))) if Free.roll(l) ≟ r =>
-                    constructMerge(Free.roll(zip), Some(proj1), None)
-
-                  case (-\/(zip @ MapFuncs.ZipMapKeys(l)), -\/(r)) if l ≟ Free.roll(r) =>
-                    constructMerge(Free.roll(zip), None, Some(proj1))
-
-                  case (-\/(l), -\/(MapFuncs.DupMapKeys(r))) if Free.roll(l) ≟ r =>
-                    constructMerge(Free.roll(MapFuncs.ZipMapKeys(r)), Some(proj1), Some(proj0))
-
-                  case (-\/(MapFuncs.DupMapKeys(l)), -\/(r)) if l ≟ Free.roll(r) =>
-                    constructMerge(Free.roll(MapFuncs.ZipMapKeys(l)), Some(proj0), Some(proj1))
-
-                  case (_, _) => None
-                }
-            }
           case (Filter(s1, c1), Filter(_, c2)) =>
             val lCond = norm.freeMF(c1 >> left)
             val rCond = norm.freeMF(c2 >> right)
@@ -363,7 +356,7 @@ object QScriptCore {
             val lOrder = o1.map(_.leftMap(o => norm.freeMF(o >> left)))
             val rOrder = o2.map(_.leftMap(o => norm.freeMF(o >> right)))
             (lBucket ≟ rBucket && lOrder ≟ rOrder).option(
-                SrcMerge(Sort(s1, lBucket, lOrder), left, right))
+              SrcMerge(Sort(s1, lBucket, lOrder), left, right))
 
           case (Subset(s1, f1, o1, c1), Subset(_, f2, o2, c2)) =>
             val from1 = rebaseBranch(f1, left)

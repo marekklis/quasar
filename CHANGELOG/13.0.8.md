@@ -1,0 +1,1 @@
+- improve rendering of QScript nodes for debugging and "explain" (specifically, the sources of joins and unions)

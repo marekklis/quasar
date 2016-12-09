@@ -115,7 +115,22 @@ object KeyValueStore {
 
   object impl {
 
-    def empty[K, V]: Task[KeyValueStore[K,V, ?] ~> Task] = TaskRef(Map.empty[K,V]).map(fromTaskRef[K,V](_))
+    def empty[K, V]: Task[KeyValueStore[K,V, ?] ~> Task] = Task.delay {
+      val state = scala.collection.concurrent.TrieMap.empty[K, V]
+      new (KeyValueStore[K, V, ?] ~> Task) {
+        def apply[A](fa: KeyValueStore[K, V, A]): Task[A] = fa match {
+          case Keys() => Task.delay(state.keys.toVector)
+          case Get(k) => Task.delay(state.get(k))
+          case Put(k, v) => Task.delay(state.update(k, v))
+          case CompareAndPut(k, expect, v) =>
+            // Beware, type-checking does not work properly in this block as of scala 2.11.8
+            Task.delay(expect.cata(
+              e => state.replace(k, e, v),
+              state.putIfAbsent(k, v).isEmpty))
+          case Delete(k) => Task.delay(state.remove(k)).void
+        }
+      }
+    }
 
     /** Returns an interpreter of `KeyValueStore[K, V, ?]` into `Task`, given a
       * `TaskRef[Map[K, V]]`.

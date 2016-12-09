@@ -127,11 +127,11 @@ object Predicate {
       val expected = Process.emitAll(expected0).map(Some(_))
 
       (actual tee expected)(tee.zipAll(None, None))
-        .flatMap { case ((a, e)) =>
-          if (jsonMatches(a, e))
-            Process.halt
-          else
-            Process.emit(a must matchJson(e) : Result)
+        .flatMap {
+          case (a, e) if jsonMatches(a, e)                  => Process.halt
+          case (a, e) if (a == e &&
+                          fieldOrder === FieldOrderIgnored) => Process.halt
+          case (a, e)                                       => Process.emit(a must matchJson(e) : Result)
         }
         .runLog.map(_.foldMap()(Result.ResultMonoid))
     }
@@ -149,9 +149,11 @@ object Predicate {
 
       (actual tee expected)(tee.zipAll(None, None))
         .flatMap {
-          case (a, None) => Process.halt
-          case (a, e) if (jsonMatches(a, e)) => Process.halt
-          case (a, e) => Process.emit(a must matchJson(e) : Result)
+          case (a, None)                                    => Process.halt
+          case (a, e) if (jsonMatches(a, e))                => Process.halt
+          case (a, e) if (a == e &&
+                          fieldOrder === FieldOrderIgnored) => Process.halt
+          case (a, e)                                       => Process.emit(a must matchJson(e) : Result)
         }
         .runLog.map(_.foldMap()(Result.ResultMonoid))
     }

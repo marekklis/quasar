@@ -2,9 +2,7 @@
   "name": "variable with a non-trivial value",
 
   "backends": {
-    "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "postgresql": "pending"
   },
 
   "data": "days.data",

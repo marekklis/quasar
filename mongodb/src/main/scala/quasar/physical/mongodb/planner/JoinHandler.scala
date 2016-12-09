@@ -17,6 +17,7 @@
 package quasar.physical.mongodb.planner
 
 import quasar.Predef._
+import quasar.RenderTree
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.javascript._
@@ -27,6 +28,7 @@ import quasar.physical.mongodb.accumulator._
 import quasar.physical.mongodb.expression._
 import quasar.physical.mongodb.workflow._
 import WorkflowBuilder._
+import quasar.sql.JoinDir
 
 import matryoshka._, Recursive.ops._
 import scalaz._, Scalaz._
@@ -44,8 +46,8 @@ object JoinHandler {
   // FIXME: these have to match the names used in the logical plan. Should
   //        change this to ensure left0/right0 are `Free` and pull the names
   //        from those.
-  val LeftName: BsonField.Name = BsonField.Name("left")
-  val RightName: BsonField.Name = BsonField.Name("right")
+  val LeftName: BsonField.Name = BsonField.Name(JoinDir.Left.name)
+  val RightName: BsonField.Name = BsonField.Name(JoinDir.Right.name)
 
   // NB: it's only safe to emit "core" expr ops here, but we always use the
   // largest type in WorkflowOp, so they're immediately injected into ExprOp.
@@ -66,7 +68,7 @@ object JoinHandler {
       C: Classify[WF],
       ev0: WorkflowOpCoreF :<: WF,
       ev1: WorkflowOp3_2F :<: WF,
-      ev2: Show[WorkflowBuilder[WF]],
+      ev2: RenderTree[WorkflowBuilder[WF]],
       ev3: ExprOpOps.Uni[ExprOp])
     : JoinHandler[WF, OptionT[WorkflowBuilder.M, ?]] = JoinHandler({ (tpe, left, right) =>
 
@@ -202,7 +204,7 @@ object JoinHandler {
 
   /** Plan an arbitrary join using only "core" operators, which always means a map-reduce. */
   def mapReduce[WF[_]: Functor: Coalesce: Crush: Crystallize]
-    (implicit ev0: WorkflowOpCoreF :<: WF, ev1: Show[WorkflowBuilder[WF]], ev2: ExprOpOps.Uni[ExprOp])
+    (implicit ev0: WorkflowOpCoreF :<: WF, ev1: RenderTree[WorkflowBuilder[WF]], ev2: ExprOpOps.Uni[ExprOp])
     : JoinHandler[WF, WorkflowBuilder.M] = JoinHandler({ (tpe, left0, right0) =>
 
     val ops = Ops[WF]
@@ -341,7 +343,7 @@ object JoinHandler {
   //      `Workflow.crush`, when we actually have a task (whether aggregation or
   //       mapReduce) in hand, we would know for sure.
   private def preferMapReduce[WF[_]: Coalesce: Crush: Crystallize: Functor](wb: WorkflowBuilder[WF])
-    (implicit ev0: WorkflowOpCoreF :<: WF, ev1: Show[WorkflowBuilder[WF]], ev2: ExprOpOps.Uni[ExprOp])
+    (implicit ev0: WorkflowOpCoreF :<: WF, ev1: RenderTree[WorkflowBuilder[WF]], ev2: ExprOpOps.Uni[ExprOp])
     : Boolean = {
     // TODO: Get rid of this when we functorize WorkflowTask
     def checkTask(wt: workflowtask.WorkflowTask): Boolean = wt match {

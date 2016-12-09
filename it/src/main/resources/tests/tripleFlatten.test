@@ -3,8 +3,7 @@
     "backends": {
         "mongodb_read_only": "pending",
         "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "marklogic":         "skip"
     },
     "data": "nested.data",
     "query": "select topObj{*}{*}{*} from nested",

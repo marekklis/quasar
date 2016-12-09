@@ -17,9 +17,11 @@
 package quasar.std
 
 import quasar.Predef._
+import quasar.{Data, Func, UnaryFunc, BinaryFunc, Type, Mapping, SemanticError},
+  SemanticError._
 import quasar.fp._
 import quasar.fp.ski._
-import quasar.{Data, Func, UnaryFunc, BinaryFunc, GenericFunc, LogicalPlan, Type, Mapping, SemanticError}, LogicalPlan._, SemanticError._
+import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 
 import matryoshka._
 import scalaz._, Scalaz._, Validation.{success, failure}
@@ -49,16 +51,16 @@ trait MathLib extends Library {
   }
 
   object ZeroF {
-    def apply() = ConstantF(Zero())
-    def unapply[A](obj: LogicalPlan[A]): Boolean = obj match {
-      case ConstantF(Zero()) => true
+    def apply() = Constant(Zero())
+    def unapply[A](obj: LP[A]): Boolean = obj match {
+      case Constant(Zero()) => true
       case _                 => false
     }
   }
   object OneF {
-    def apply() = ConstantF(One())
-    def unapply[A](obj: LogicalPlan[A]): Boolean = obj match {
-      case ConstantF(One()) => true
+    def apply() = Constant(One())
+    def unapply[A](obj: LP[A]): Boolean = obj match {
+      case Constant(One()) => true
       case _                => false
     }
   }
@@ -86,18 +88,16 @@ trait MathLib extends Library {
   /** Adds two numeric values, promoting to decimal if either operand is
     * decimal.
     */
-
   val Add = BinaryFunc(
     Mapping,
-    "(+)",
     "Adds two numeric or temporal values",
     MathAbs,
     Func.Input2(MathAbs, MathRel),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(x), Embed(ZeroF()))) => x.some
-          case InvokeF(_, Sized(Embed(ZeroF()), Embed(x))) => x.some
+          case Invoke(_, Sized(Embed(x), Embed(ZeroF()))) => x.some
+          case Invoke(_, Sized(Embed(ZeroF()), Embed(x))) => x.some
           case _                                           => None
         }
     },
@@ -124,15 +124,14 @@ trait MathLib extends Library {
    */
   val Multiply = BinaryFunc(
     Mapping,
-    "(*)",
     "Multiplies two numeric values or one interval and one numeric value",
     MathRel,
     Func.Input2(MathRel, Type.Numeric),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(x), Embed(OneF()))) => x.some
-          case InvokeF(_, Sized(Embed(OneF()), Embed(x))) => x.some
+          case Invoke(_, Sized(Embed(x), Embed(OneF()))) => x.some
+          case Invoke(_, Sized(Embed(OneF()), Embed(x))) => x.some
           case _                                          => None
         }
     },
@@ -152,14 +151,13 @@ trait MathLib extends Library {
 
   val Power = BinaryFunc(
     Mapping,
-    "(^)",
     "Raises the first argument to the power of the second",
     Type.Numeric,
     Func.Input2(Type.Numeric, Type.Numeric),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(x), Embed(OneF()))) => x.some
+          case Invoke(_, Sized(Embed(x), Embed(OneF()))) => x.some
           case _                                         => None
         }
     },
@@ -178,15 +176,14 @@ trait MathLib extends Library {
     */
   val Subtract = BinaryFunc(
     Mapping,
-    "(-)",
     "Subtracts two numeric or temporal values",
     MathAbs,
     Func.Input2(MathAbs, MathAbs),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(x), Embed(ZeroF()))) => x.some
-          case InvokeF(_, Sized(Embed(ZeroF()), x))        => Negate(x).some
+          case Invoke(_, Sized(Embed(x), Embed(ZeroF()))) => x.some
+          case Invoke(_, Sized(Embed(ZeroF()), x))        => Negate(x).some
           case _                                           => None
         }
     },
@@ -218,14 +215,13 @@ trait MathLib extends Library {
    */
   val Divide = BinaryFunc(
     Mapping,
-    "(/)",
     "Divides one numeric or interval value by another (non-zero) numeric value",
     MathRel,
     Func.Input2(MathAbs, MathRel),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(x), Embed(OneF()))) => x.some
+          case Invoke(_, Sized(Embed(x), Embed(OneF()))) => x.some
           case _                                         => None
         }
     },
@@ -254,7 +250,6 @@ trait MathLib extends Library {
    */
   val Negate = UnaryFunc(
     Mapping,
-    "-",
     "Reverses the sign of a numeric or interval value",
     MathRel,
     Func.Input1(MathRel),
@@ -273,7 +268,6 @@ trait MathLib extends Library {
 
   val Modulo = BinaryFunc(
     Mapping,
-    "(%)",
     "Finds the remainder of one number divided by another",
     MathRel,
     Func.Input2(MathRel, Type.Numeric),
@@ -286,13 +280,6 @@ trait MathLib extends Library {
       case Sized(Type.Const(Data.Number(v1)), Type.Const(Data.Number(v2))) => success(Type.Const(Data.Dec(v1 % v2)))
     }) ||| numericWidening,
     biReflexiveUnapply)
-
-  def unaryFunctions: List[GenericFunc[nat._1]] = Negate :: Nil
-
-  def binaryFunctions: List[GenericFunc[nat._2]] =
-    Add :: Multiply :: Subtract :: Divide :: Modulo :: Power :: Nil
-
-  def ternaryFunctions: List[GenericFunc[nat._3]] = Nil
 }
 
 object MathLib extends MathLib

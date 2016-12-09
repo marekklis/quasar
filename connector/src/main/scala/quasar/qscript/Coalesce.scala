@@ -147,29 +147,26 @@ trait CoalesceInstances {
 class CoalesceT[T[_[_]]: Recursive: Corecursive: EqualT] extends TTypes[T] {
   private def CoalesceTotal = Coalesce[T, QScriptTotal, QScriptTotal]
 
-  private def freeQC(branch: FreeQS): FreeQS =
+  private type QST = QScriptTotal[T[CoEnv[Hole, QScriptTotal, ?]]]
+  private type CoEnvQST[A] = CoEnv[Hole, QScriptTotal, A]
+
+  private def freeTotal(branch: FreeQS)(coalesce: QST => Option[QST]): FreeQS =
     freeTransCata[T, QScriptTotal, QScriptTotal, Hole, Hole](branch)(co =>
       co.run.fold(
         κ(co),
-        in => CoEnv(repeatedly(CoalesceTotal.coalesceQC(coenvPrism[QScriptTotal, Hole]))(in).right)))
+        in => CoEnv(repeatedly(coalesce)(in).right)))
+
+  private def freeQC(branch: FreeQS): FreeQS =
+    freeTotal(branch)(CoalesceTotal.coalesceQC(coenvPrism[QScriptTotal, Hole]))
 
   private def freeSR(branch: FreeQS): FreeQS =
-    freeTransCata[T, QScriptTotal, QScriptTotal, Hole, Hole](branch)(co =>
-      co.run.fold(
-        κ(co),
-        in => CoEnv(repeatedly(CoalesceTotal.coalesceSR(coenvPrism[QScriptTotal, Hole]))(in).right)))
+    freeTotal(branch)(CoalesceTotal.coalesceSR(coenvPrism[QScriptTotal, Hole]))
 
   private def freeEJ(branch: FreeQS): FreeQS =
-    freeTransCata[T, QScriptTotal, QScriptTotal, Hole, Hole](branch)(co =>
-      co.run.fold(
-        κ(co),
-        in => CoEnv(repeatedly(CoalesceTotal.coalesceEJ(coenvPrism[QScriptTotal, Hole].get))(in).right)))
+    freeTotal(branch)(CoalesceTotal.coalesceEJ(coenvPrism[QScriptTotal, Hole].get))
 
   private def freeTJ(branch: FreeQS): FreeQS =
-    freeTransCata[T, QScriptTotal, QScriptTotal, Hole, Hole](branch)(co =>
-      co.run.fold(
-        κ(co),
-        in => CoEnv(repeatedly(CoalesceTotal.coalesceTJ(coenvPrism[QScriptTotal, Hole].get))(in).right)))
+    freeTotal(branch)(CoalesceTotal.coalesceTJ(coenvPrism[QScriptTotal, Hole].get))
 
   private def ifNeq(f: FreeQS => FreeQS): FreeQS => Option[FreeQS] =
     branch => {
@@ -207,8 +204,8 @@ class CoalesceT[T[_[_]]: Recursive: Corecursive: EqualT] extends TTypes[T] {
       type OUT[A] = G[A]
 
       // TODO: I feel like this must be some standard fold.
-      def sequenceReduce(rf: ReduceFunc[(FreeMap, JoinFunc)])
-          : Option[(FreeMap, ReduceFunc[JoinFunc])] =
+      def sequenceReduce(rf: ReduceFunc[(IdStatus, JoinFunc)])
+          : Option[(IdStatus, ReduceFunc[JoinFunc])] =
         rf match {
           case ReduceFuncs.Count(a)           => (a._1, ReduceFuncs.Count(a._2)).some
           case ReduceFuncs.Sum(a)             => (a._1, ReduceFuncs.Sum(a._2)).some
@@ -237,8 +234,8 @@ class CoalesceT[T[_[_]]: Recursive: Corecursive: EqualT] extends TTypes[T] {
               mf).some
           else s match {
             case Map(srcInner, mfInner) => Map(srcInner, mf >> mfInner).some
-            case LeftShift(srcInner, struct, repair) =>
-              LeftShift(srcInner, struct, mf >> repair).some
+            case LeftShift(srcInner, struct, id, repair) =>
+              LeftShift(srcInner, struct, id, mf >> repair).some
             case Reduce(srcInner, bucket, funcs, repair) =>
               Reduce(srcInner, bucket, funcs, mf >> repair).some
             case Subset(innerSrc, lb, sel, rb) =>
@@ -265,51 +262,48 @@ class CoalesceT[T[_[_]]: Recursive: Corecursive: EqualT] extends TTypes[T] {
             }
             case _ => None
           })
-        case LeftShift(Embed(src), struct, shiftRepair) =>
+        case LeftShift(Embed(src), struct, id, shiftRepair) =>
           FToOut.get(src) >>= QC.prj >>= {
-            case LeftShift(innerSrc, innerStruct, innerRepair)
+            case LeftShift(innerSrc, innerStruct, innerId, innerRepair)
                 if !shiftRepair.element(LeftSide) && struct != HoleF =>
               LeftShift(
-                FToOut.reverseGet(QC.inj(LeftShift(innerSrc, innerStruct, struct >> innerRepair))).embed,
+                FToOut.reverseGet(QC.inj(LeftShift(innerSrc, innerStruct, innerId, struct >> innerRepair))).embed,
                 HoleF,
+                id,
                 shiftRepair).some
             case Map(innerSrc, mf) if !shiftRepair.element(LeftSide) =>
-              LeftShift(innerSrc, struct >> mf, shiftRepair).some
+              LeftShift(innerSrc, struct >> mf, id, shiftRepair).some
             case Reduce(srcInner, _, List(ReduceFuncs.UnshiftArray(elem)), redRepair)
                 if freeTransCata(struct >> redRepair)(MapFunc.normalize) ≟ Free.point(ReduceIndex(0)) =>
               rightOnly(elem)(shiftRepair) ∘ (Map(srcInner, _))
-            case Reduce(srcInner, _, List(ReduceFuncs.UnshiftMap(_, elem)), redRepair)
-                if freeTransCata(struct >> redRepair)(MapFunc.normalize) ≟ Free.point(ReduceIndex(0)) =>
-              rightOnly(elem)(shiftRepair) ∘ (Map(srcInner, _))
             case Reduce(srcInner, _, List(ReduceFuncs.UnshiftMap(k, elem)), redRepair)
-                if freeTransCata(struct >> redRepair)(MapFunc.normalize) ≟ Free.roll(ZipMapKeys(Free.point(ReduceIndex(0)))) =>
-              rightOnly(
-                Free.roll(ConcatArrays[T, FreeMap](Free.roll(MakeArray(k)), Free.roll(MakeArray(elem)))))(
-                shiftRepair) ∘
-                (Map(srcInner, _))
+                if freeTransCata(struct >> redRepair)(MapFunc.normalize) ≟ Free.point(ReduceIndex(0)) =>
+              rightOnly(id match {
+                case IncludeId =>
+                  Free.roll(ConcatArrays[T, FreeMap](Free.roll(MakeArray(k)), Free.roll(MakeArray(elem))))
+                case _         => elem
+              })(shiftRepair) ∘ (Map(srcInner, _))
             case _ => None
           }
         case Reduce(Embed(src), bucket, reducers, redRepair) =>
           FToOut.get(src) >>= QC.prj >>= {
-            case LeftShift(innerSrc, struct, shiftRepair)
+            case LeftShift(innerSrc, struct, id, shiftRepair)
                 if shiftRepair =/= RightSideF =>
               (rightOnly(HoleF)(freeTransCata(bucket >> shiftRepair)(MapFunc.normalize)) ⊛
                 reducers.traverse(_.traverse(mf => rightOnly(HoleF)(freeTransCata(mf >> shiftRepair)(MapFunc.normalize)))))((b, r) =>
-                Reduce(FToOut.reverseGet(QC.inj(LeftShift(innerSrc, struct, RightSideF))).embed, b, r, redRepair))
-            case LeftShift(innerSrc, struct, shiftRepair) =>
-              (rewriteShift(struct, freeTransCata(bucket >> shiftRepair)(MapFunc.normalize)) ⊛
-                reducers.traverse(_.traverse(mf => rewriteShift(struct, freeTransCata(mf >> shiftRepair)(MapFunc.normalize)))))((b, r) =>
-                r.foldRightM[Option, (FreeMap, (JoinFunc, List[ReduceFunc[JoinFunc]]))]((b._1, (b._2, Nil)))((elem, acc) => {
+                Reduce(FToOut.reverseGet(QC.inj(LeftShift(innerSrc, struct, id, RightSideF))).embed, b, r, redRepair))
+            case LeftShift(innerSrc, struct, id, shiftRepair) =>
+              (rewriteShift(id, freeTransCata(bucket >> shiftRepair)(MapFunc.normalize)) ⊛
+                reducers.traverse(_.traverse(mf => rewriteShift(id, freeTransCata(mf >> shiftRepair)(MapFunc.normalize)))))((b, r) =>
+                r.foldRightM[Option, (IdStatus, (JoinFunc, List[ReduceFunc[JoinFunc]]))]((b._1, (b._2, Nil)))((elem, acc) => {
                   sequenceReduce(elem) >>= (e =>
                     (e._1 ≟ acc._1).option(
                       (acc._1, (acc._2._1, e._2 :: acc._2._2))))
                 })).join >>= {
-                case (st, (bucket, reducers)) =>
-                  if (st ≟ struct) None
-                  else
-                    (rightOnly(HoleF)(bucket) ⊛
-                      (reducers.traverse(_.traverse(rightOnly(HoleF)))))((sb, sr) =>
-                      Reduce(FToOut.reverseGet(QC.inj(LeftShift(innerSrc, st, RightSideF))).embed, sb, sr, redRepair))
+                case (newId, (bucket, reducers)) =>
+                  (rightOnly(HoleF)(bucket) ⊛
+                    (reducers.traverse(_.traverse(rightOnly(HoleF)))))((sb, sr) =>
+                    Reduce(FToOut.reverseGet(QC.inj(LeftShift(innerSrc, struct, newId, RightSideF))).embed, sb, sr, redRepair))
               }
             case Map(innerSrc, mf) =>
               Reduce(

@@ -26,6 +26,10 @@ notifications:
   slack:
     secure: KPCXtCAjtlpRQcH7TQtprrf67yIqPVpht9L6/+wbbNd14Tj3x53fiZ3OTabHVx3SL2ZWxbWq+FJGxdIFMyxC/fC0bV9flB7PlRtqHJV1Q7g49odAMAZL7syWr7vFP5bJt+TXuxHvMBihDHFk1Cehy4a1cnrOMReDgqGIFCwQtbI=
 
+branches:
+  except:
+    - /^v\d+\.\d+\.\d+-.*$/ # don't redundantly build tags
+
 cache:
   directories:
   - $HOME/.ivy2/cache
@@ -39,11 +43,12 @@ before_cache:
 env:
   matrix:
   - MONGO_RELEASE=2_6
+  - QUASAR_COUCHBASE='{"couchbase":{"connectionUri":"couchbase://0.0.0.0?username=Administrator&password=password"}}'
+  - QUASAR_MARKLOGIC='{"marklogic":{"connectionUri":"xcc://marklogic:marklogic@localhost:8000/Documents"}}'
   - MONGO_RELEASE=3_0
   - MONGO_RELEASE=3_0_RO
   - MONGO_RELEASE=3_2
   - QUASAR_POSTGRESQL='{"postgresql":{"connectionUri":"jdbc:postgresql://localhost/quasar-test?user=postgres&password=postgres"}}'
-  - QUASAR_MARKLOGIC='{"marklogic":{"connectionUri":"xcc://marklogic:marklogic@localhost:8000/Documents"}}'
 
   global:
   - LOCAL_MONGODB=true

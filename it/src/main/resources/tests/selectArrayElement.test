@@ -2,8 +2,7 @@
     "name": "select array element",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "largeZips.data",
     "query": "select city, loc[0] as lat from largeZips",

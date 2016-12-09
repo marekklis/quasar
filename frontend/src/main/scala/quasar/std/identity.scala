@@ -16,7 +16,6 @@
 
 package quasar.std
 
-import quasar.Predef._
 import quasar._
 
 import scalaz._
@@ -28,7 +27,6 @@ trait IdentityLib extends Library {
 
   val Squash = UnaryFunc(
     Squashing,
-    "SQUASH",
     "Squashes all dimensional information",
     Top,
     Func.Input1(Top),
@@ -38,7 +36,6 @@ trait IdentityLib extends Library {
 
   val ToId = UnaryFunc(
     Mapping,
-    "oid",
     "Converts a string to a (backend-specific) object identifier.",
     Type.Id,
     Func.Input1(Type.Str),
@@ -48,10 +45,6 @@ trait IdentityLib extends Library {
       case Sized(Type.Str)                  => Type.Id
     },
     basicUntyper)
-
-  def unaryFunctions: List[GenericFunc[nat._1]] = Squash :: ToId :: Nil
-  def binaryFunctions: List[GenericFunc[nat._2]] = Nil
-  def ternaryFunctions: List[GenericFunc[nat._3]] = Nil
 }
 
 object IdentityLib extends IdentityLib

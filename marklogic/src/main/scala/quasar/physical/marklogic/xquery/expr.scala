@@ -24,9 +24,8 @@ import scalaz._
 import scalaz.std.string._
 import scalaz.std.iterable._
 import scalaz.syntax.foldable._
-import scalaz.syntax.show._
+import scalaz.syntax.functor._
 import scalaz.syntax.std.option._
-import scalaz.syntax.std.boolean._
 
 @SuppressWarnings(Array("org.wartremover.warts.DefaultArguments"))
 object expr {
@@ -39,81 +38,68 @@ object expr {
   val emptySeq: XQuery =
     XQuery("()")
 
-  def every(ts: (String, XQuery), tss: (String, XQuery)*): QuantifiedExpr =
-    QuantifiedExpr(Quantifier.Every, NonEmptyList(ts, tss: _*))
+  def every(b: Binding, bs: Binding*): QuantifiedExpr =
+    QuantifiedExpr(Quantifier.Every, NonEmptyList(b, bs: _*))
 
-  def for_(ts: (String, XQuery), tss: (String, XQuery)*): Flwor =
-    Flwor(ts :: IList.fromList(tss.toList), IList.empty, None, IList.empty, false)
+  def for_(b: PositionalBinding, bs: PositionalBinding*): FlworExpr =
+    FlworExpr.fromBindings(NonEmptyList(BindingClause.forClause(NonEmptyList(b, bs: _*))))
 
+  // FIXME: Use TypedBindingName instead of string
+  // FIXME: Refactor body to be args => XQuery
   def func(args: String*)(body: XQuery): XQuery =
     XQuery(s"function${mkSeq(args map (XQuery(_)))} { $body }")
 
   def if_(cond: XQuery): IfExpr =
     IfExpr(cond)
 
-  def let_(b: (String, XQuery), bs: (String, XQuery)*): Flwor =
-    Flwor(IList.empty, b :: IList.fromList(bs.toList), None, IList.empty, false)
+  def let_(b: Binding, bs: Binding*): FlworExpr =
+    FlworExpr.fromBindings(NonEmptyList(BindingClause.letClause(NonEmptyList(b, bs: _*))))
 
   def isCastable(x: XQuery, tpe: SequenceType): XQuery =
     XQuery(s"$x castable as $tpe")
 
-  def some(ts: (String, XQuery), tss: (String, XQuery)*): QuantifiedExpr =
-    QuantifiedExpr(Quantifier.Some, NonEmptyList(ts, tss: _*))
+  def some(b: Binding, bs: Binding*): QuantifiedExpr =
+    QuantifiedExpr(Quantifier.Some, NonEmptyList(b, bs: _*))
+
+  def try_(body: XQuery): TryCatchExpr =
+    TryCatchExpr(body)
 
   def typeswitch(on: XQuery)(cases: TypeswitchCaseClause*): TypeswitchExpr =
     TypeswitchExpr(on, cases.toList)
 
-  final case class Flwor(
-    tupleStreams: IList[(String, XQuery)],
-    letDefs: IList[(String, XQuery)],
+  final case class FlworExpr(
+    bindingClauses: NonEmptyList[BindingClause],
     filterExpr: Option[XQuery],
     orderSpecs: IList[(XQuery, SortDirection)],
     orderIsStable: Boolean
   ) {
-    def let_(d: (String, XQuery), ds: (String, XQuery)*): Flwor =
-      copy(letDefs = d :: IList.fromList(ds.toList))
+    def for_(b: PositionalBinding, bs: PositionalBinding*): FlworExpr =
+      copy(bindingClauses = bindingClauses :::> IList(BindingClause.forClause(NonEmptyList(b, bs: _*))))
 
-    def where_(expr: XQuery): Flwor =
+    def let_(b: Binding, bs: Binding*): FlworExpr =
+      copy(bindingClauses = bindingClauses :::> IList(BindingClause.letClause(NonEmptyList(b, bs: _*))))
+
+    def where_(expr: XQuery): FlworExpr =
       copy(filterExpr = Some(expr))
 
-    def orderBy(s: (XQuery, SortDirection), ss: (XQuery, SortDirection)*): Flwor =
+    def orderBy(s: (XQuery, SortDirection), ss: (XQuery, SortDirection)*): FlworExpr =
       copy(orderSpecs = s :: IList.fromList(ss.toList))
 
-    def stableOrderBy(s: (XQuery, SortDirection), ss: (XQuery, SortDirection)*): Flwor =
+    def stableOrderBy(s: (XQuery, SortDirection), ss: (XQuery, SortDirection)*): FlworExpr =
       orderBy(s, ss: _*).copy(orderIsStable = true)
 
-    def return_(expr: XQuery): XQuery = {
-      val forClause = {
-        val bindings = tupleStreams map {
-          case (v, xqy) => s"$v in $xqy"
-        } intercalate ", "
+    def return_(expr: XQuery): XQuery =
+      XQuery.Flwor(
+        bindingClauses,
+        filterExpr,
+        orderSpecs,
+        orderIsStable,
+        expr)
+  }
 
-        if (tupleStreams.isEmpty) "" else s"for $bindings "
-      }
-
-      val letClause = {
-        val bindings = letDefs map {
-          case (v, xqy) => s"$v := $xqy"
-        } intercalate ", "
-
-        if (letDefs.isEmpty) "" else s"let $bindings "
-      }
-
-      val whereClause =
-        filterExpr.map(expr => s"where $expr ").orZero
-
-      val orderClause = {
-        val specs = orderSpecs map {
-          case (xqy, mod) => s"$xqy $mod"
-        } intercalate ", "
-
-        val orderKeyword = orderIsStable.fold("stable order", "order")
-
-        if (orderSpecs.isEmpty) "" else s"$orderKeyword by $specs "
-      }
-
-      XQuery(s"${forClause}${letClause}${whereClause}${orderClause}return $expr")
-    }
+  object FlworExpr {
+    def fromBindings(bindingClauses: NonEmptyList[BindingClause]): FlworExpr =
+      FlworExpr(bindingClauses, None, IList.empty, false)
   }
 
   final case class IfExpr(cond: XQuery) {
@@ -130,7 +116,7 @@ object expr {
       default(TypeswitchDefaultClause(None, xqy))
 
     def default(binding: BindingName, f: XQuery => XQuery): XQuery =
-      default(TypeswitchDefaultClause(Some(binding), f(binding.xqy)))
+      default(TypeswitchDefaultClause(Some(binding), f(~binding)))
 
     def default(dc: TypeswitchDefaultClause): XQuery = {
       val body = (cases.map(_.render) :+ dc.render).map("  " + _).mkString("\n")
@@ -138,14 +124,14 @@ object expr {
     }
   }
 
-  final case class TypeswitchCaseClause(matching: TypedBinding \/ SequenceType, result: XQuery) {
+  final case class TypeswitchCaseClause(matching: TypedBindingName \/ SequenceType, result: XQuery) {
     def render: String =
       s"case ${matching.fold(_.render, _.toString)} return $result"
   }
 
   final case class TypeswitchDefaultClause(binding: Option[BindingName], result: XQuery) {
     def render: String = {
-      val bind = binding.map(_.xqy.shows + " ")
+      val bind = binding.map(_.render + " ")
       s"default ${~bind}return $result"
     }
   }
@@ -162,10 +148,20 @@ object expr {
     case object Every extends Quantifier
   }
 
-  final case class QuantifiedExpr(quantifier: Quantifier, tupleStreams: NonEmptyList[(String, XQuery)]) {
+  // TODO: Should become an XQuery node
+  final case class QuantifiedExpr(quantifier: Quantifier, bindings: NonEmptyList[Binding]) {
     def satisfies(xqy: XQuery): XQuery = {
-      val streams = tupleStreams map { case (v, seq) => s"$v in $seq" } intercalate (", ")
+      val streams = bindings map (_.render("in")) intercalate (", ")
       XQuery(s"$quantifier $streams satisfies $xqy")
     }
+  }
+
+  // TODO: Should become an XQuery node
+  final case class TryCatchExpr(body: XQuery) {
+    def catch_(e: BindingName)(f: XQuery => XQuery): XQuery =
+      catchF[Id.Id](e)(f)
+
+    def catchF[F[_]: Functor](e: BindingName)(f: XQuery => F[XQuery]): F[XQuery] =
+      f(~e) map (recover => XQuery(s"try { $body } catch(${e.render}) { $recover }"))
   }
 }

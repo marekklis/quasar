@@ -348,6 +348,7 @@ object ExprOpCoreF {
         case $lteF(l, r)             => binop(jscore.Lte, l, r)
         case expr @ $metaF()          => -\/(NonRepresentableInJS(expr.toString))
         case $multiplyF(l, r)        => binop(jscore.Mult, l, r)
+        case $modF(l, r)             => binop(jscore.Mod, l, r)
         case $neqF(l, r)             => binop(jscore.Neq, l, r)
         case $notF(a)                => unop(jscore.Not, a)
         case $orF(f, s, o @ _*)      =>
@@ -368,7 +369,10 @@ object ExprOpCoreF {
 
         case $yearF(a)               => invoke(a, "getUTCFullYear")
         // case $dayOfYear(a)           => // TODO: no JS equivalent
-        case $monthF(a)              => invoke(a, "getUTCMonth")
+        case $monthF(a)              => expr1(a)(x =>
+          jscore.BinOp(jscore.Add,
+            jscore.Call(jscore.Select(x, "getUTCMonth"), Nil),
+            jscore.Literal(Js.Num(1, false))))
         case $dayOfMonthF(a)         => invoke(a, "getUTCDate")
         // case $week(a)                => // TODO: no JS equivalent
         case $dayOfWeekF(a)          => expr1(a)(x =>

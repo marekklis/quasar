@@ -20,13 +20,15 @@ import quasar.Predef._
 import quasar.{Planner => _, _}
 import quasar.contrib.pathy.{ADir, PathSegment}
 import quasar.effect.MonotonicSeq
-import quasar.fp._, eitherT._, free._, ski.ι
-import quasar.physical.couchbase.planner._
-import quasar.qscript.{Map => _, Read => _, _}, MapFuncs._
-import quasar.sql.CompilerHelpers
+import quasar.fp._, eitherT._
+import quasar.fp.free._
+import quasar.fp.ski.ι
+import quasar.frontend.logicalplan.LogicalPlan
 import quasar.physical.couchbase.N1QL._
 import quasar.physical.couchbase.fs.queryfile._
 import quasar.physical.couchbase.planner._, Planner._
+import quasar.qscript.{Map => _, Read => _, _}, MapFuncs._
+import quasar.sql.CompilerHelpers
 
 import eu.timepit.refined.auto._
 import matryoshka._, Recursive.ops._
@@ -46,7 +48,7 @@ class BasicQueryEnablementSpec
   sequential
 
   def compileLogicalPlan(query: String): Fix[LogicalPlan] =
-    compile(query).map(Optimizer.optimize).fold(e => scala.sys.error(e.shows), ι)
+    compile(query).map(optimizer.optimize).fold(e => scala.sys.error(e.shows), ι)
 
   def lc[S[_]]: DiscoverPath.ListContents[Plan[S, ?]] =
     Kleisli[Id, ADir, Set[PathSegment]](listContents >>> (_ + FileName("beer-sample").right))
@@ -56,14 +58,14 @@ class BasicQueryEnablementSpec
   type Eff[A] = (MonotonicSeq :/: Task)#M[A]
 
   def n1qlFromSql2(sql2: String): String =
-    (lpLcToN1ql[Eff](compileLogicalPlan(sql2), lc) ∘ outerN1ql)
+    (lpLcToN1ql[Eff](compileLogicalPlan(sql2), lc) ∘ n1qlQueryString)
       .run.run.map(_._2)
       .foldMap(MonotonicSeq.fromZero.unsafePerformSync :+: reflNT[Task])
       .unsafePerformSync
       .fold(e => scala.sys.error(e.shows), ι)
 
-  def n1qlFromQS(qs: Fix[QS]): String =
-    (qs.cataM(Planner[Free[MonotonicSeq, ?], QS].plan) ∘ outerN1ql)
+  def n1qlFromQS(qs: Fix[QST]): String =
+    (qs.cataM(Planner[Free[MonotonicSeq, ?], QST].plan) ∘ (outerN1ql _ >>> n1qlQueryString))
       .run.run.map(_._2)
       .foldMap(MonotonicSeq.fromZero.unsafePerformSync)
       .unsafePerformSync
@@ -82,27 +84,15 @@ class BasicQueryEnablementSpec
 
     testSql2ToN1ql(
       "select name from `beer-sample`",
-      """select value v from (select value object_add({}, "name", _0.name) from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _0) as v""")
+      """select value v from (select value {"name": _0.["name"]} from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _0) as v""")
 
-    testSql2ToN1qlPending(
+    testSql2ToN1ql(
       "select name, type from `beer-sample`",
-      pending("ConcatMaps implementation"))
+      """select value v from (select value {"name": _0.["name"], "type": _0.["type"]} from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _0) as v""")
 
     testSql2ToN1ql(
       "select name from `beer-sample` offset 1",
-      """select value v from (select value _4 from (select value _2[_1[0]:] from (select value (select value object_add({}, "name", _5.name) from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _5) from (select value (select value [])) as _0) as _2 let _1 = (select value 1 let _6 = (select value []))) as _3 unnest _3 _4) as v""")
-
-    testSql2ToN1ql(
-      "select name from `beer-sample` limit 1",
-      """select value v from (select value _4 from (select value _2[0:_1[0]] from (select value (select value object_add({}, "name", _5.name) from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _5) from (select value (select value [])) as _0) as _2 let _1 = (select value 1 let _6 = (select value []))) as _3 unnest _3 _4) as v""")
-
-    testSql2ToN1qlPending(
-      "select name from `beer-sample` order by name",
-      pending("#1411"))
-
-    testSql2ToN1qlPending(
-      """select name from `beer-sample` where name = "Brasserie de Silly"""",
-      todo)
+      """select value v from (select value _4 from (select value _2[_1[0]:] from (select value (select value {"name": _5.["name"]} from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _5) from (select value (select value [])) as _0) as _2 let _1 = (select value 1 let _6 = (select value []))) as _3 unnest ifnull(_3, { "$na": null }) _4) as v""")
 
     testSql2ToN1ql(
       "select count(*) from `beer-sample`",
@@ -110,116 +100,28 @@ class BasicQueryEnablementSpec
 
     testSql2ToN1ql(
       "select count(name) from `beer-sample`",
-      """select value v from (select value object_add({}, "0", count(_0.name)) from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _0) as v""")
+      """select value v from (select value object_add({}, "0", count(_0.["name"])) from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _0) as v""")
 
     testSql2ToN1ql(
       "select geo.lat + geo.lon from `beer-sample`",
-      """select value v from (select value object_add({}, "0", (_0.geo.lat + _0.geo.lon)) from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _0) as v""")
+      """select value v from (select value {"0": (_0.["geo"].["lat"] + _0.["geo"].["lon"])} from (select value ifmissing(v.`value`, v) from `beer-sample` v) as _0) as v""")
   }
 
   "QScript to N1QL" should {
 
-    "convert a squashed read" in {
-      // "select * from foo"
-      val qs =
-        chain(
-           ReadR(rootDir </> file("foo")),
-           QC.inj(LeftShift((),
-             HoleF,
-             Free.point(RightSide))))
-
-      val n1ql = n1qlFromQS(qs)
-
-      n1ql must_= "select value v from (select value _0 from (select value ifmissing(v.`value`, v) from `foo` v) as _1 unnest _1 as _0) as v"
-    }
-
-    "convert a simple projection" in {
-      // "select zed from foo"
-      val qs =
-        chain(
-          ReadR(rootDir </> file("foo")),
-          QC.inj(LeftShift((),
-            HoleF,
-            ProjectFieldR(Free.point(RightSide), StrLit("zed")))))
-
-      val n1ql = n1qlFromQS(qs)
-
-      n1ql must_= "select value v from (select value zed from (select value _0 from (select value ifmissing(v.`value`, v) from `foo` v) as _1 unnest _1 as _0) as _2) as v"
-    }
-
     "read followed by a map" in {
-      // "select (a + b) from foo"
+      // select (a + b) from foo
       val qs =
-        chain(
-          ReadR(rootDir </> file("foo")),
-          QC.inj(qscript.Map(
-            (),
+        chain[Fix, QST](
+          SRT.inj(Const(ShiftedRead(rootDir </> file("foo"), ExcludeId))),
+          QCT.inj(qscript.Map((),
             Free.roll(Add(
               ProjectFieldR(HoleF, StrLit("a")),
               ProjectFieldR(HoleF, StrLit("b")))))))
 
       val n1ql = n1qlFromQS(qs)
 
-      n1ql must_= "select value v from (select value (_0.a + _0.b) from (select value ifmissing(v.`value`, v) from `foo` v) as _0) as v"
-    }
-
-    "convert a basic reduction wrapped in an object" in {
-      // "select sum(height) from person"
-      val qs =
-        chain(
-          ReadR(rootDir </> file("person")),
-          QC.inj(LeftShift((),
-            ProjectFieldR(HoleF, StrLit("person")),
-            ProjectFieldR(
-              Free.point(RightSide),
-              StrLit("height")))),
-          QC.inj(Reduce(
-            (),
-            NullLit(), // reduce on a constant bucket, which is normalized to Null
-            List(ReduceFuncs.Sum[FreeMap](HoleF)),
-            Free.roll(MakeMap(StrLit("0"), Free.point(ReduceIndex(0)))))))
-
-      val n1ql = n1qlFromQS(qs)
-
-      n1ql must_= """select value v from (select value object_add({}, "0", sum(_3)) from (select value height from (select value _0 from (select value ifmissing(v.`value`, v) from `person` v) as _1 unnest _1 as _0) as _2) as _3) as v"""
-    }
-
-    "convert a flatten array" in {
-      // "select loc[:*] from zips",
-      val qs =
-        chain(
-          ReadR(rootDir </> file("zips")),
-          QC.inj(LeftShift((),
-            ProjectFieldR(HoleF, StrLit("zips")),
-            ProjectFieldR(
-              Free.point(RightSide),
-              StrLit("loc")))),
-          QC.inj(LeftShift((),
-            HoleF,
-            Free.roll(MakeMap(StrLit("loc"), Free.point(RightSide))))))
-
-      val n1ql = n1qlFromQS(qs)
-
-      n1ql must_= """select value v from (select value object_add({}, "loc", (select value _3 from (select value loc from (select value _0 from (select value ifmissing(v.`value`, v) from `zips` v) as _1 unnest _1 as _0) as _2) as _4 unnest _4 as _3))) as v"""
-    }
-
-    "convert a filter" in {
-      // "select * from foo where bar between 1 and 10"
-      val qs =
-        chain(
-          ReadR(rootDir </> file("foo")),
-          QC.inj(LeftShift((),
-            HoleF,
-            Free.point(RightSide))),
-          QC.inj(Filter((),
-            Free.roll(Between(
-              ProjectFieldR(HoleF, StrLit("bar")),
-              IntLit(1),
-              IntLit(10))))))
-
-      val n1ql = n1qlFromQS(qs)
-
-      todo
+      n1ql must_= """select value v from (select value (_0.["a"] + _0.["b"]) from (select value ifmissing(v.`value`, v) from `foo` v) as _0) as v"""
     }
   }
 

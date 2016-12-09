@@ -17,7 +17,7 @@
 package quasar.fs.mount
 
 import quasar.Predef._
-import quasar.EnvironmentError
+import quasar.connector.EnvironmentError
 import quasar.fs._
 
 import monocle.Prism

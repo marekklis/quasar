@@ -1,24 +1,27 @@
 {
-  "name": "wildcard with additional projections (and filtering)",
+  "name": "wildcard with additional projections and filtering",
   "backends": {
-    "mongodb_read_only": "pending",
+    "mongodb_2_6":       "skip",
+    "mongodb_3_0":       "skip",
+    "mongodb_read_only": "skip",
+    "mongodb_3_2":       "skip",
     "postgresql":        "pending",
-    "marklogic":         "skip",
-    "couchbase":         "skip"
+    "couchbase":         "skipCI"
   },
   "data": "zips.data",
-  "query": "select *, concat(city, concat(\", \", state)), city = \"BOULDER\" from zips where city like \"BOULDER%\"",
+  "query": "select *, concat(city, concat(\", \", state)) as city_state, city = \"BOULDER\" as boulderish from zips where city like \"BOULDER%\"",
   "predicate": "containsExactly",
+  "ignoreFieldOrder": [ "*" ],
   "expected": [
-    { "value": {  "_id": "80301", "city": "BOULDER",          "loc": [ -105.21426, 40.049733 ],  "pop": 18174.0, "state": "CO", "1": "BOULDER, CO",          "2": true  } },
-    { "value": {  "_id": "80302", "city": "BOULDER",          "loc": [ -105.285131, 40.017235 ], "pop": 29384.0, "state": "CO", "1": "BOULDER, CO",          "2": true  } },
-    { "value": {  "_id": "80303", "city": "BOULDER",          "loc": [ -105.239178, 39.991381 ], "pop": 39860.0, "state": "CO", "1": "BOULDER, CO",          "2": true  } },
-    { "value": {  "_id": "80304", "city": "BOULDER",          "loc": [ -105.277073, 40.037482 ], "pop": 21550.0, "state": "CO", "1": "BOULDER, CO",          "2": true  } },
-    { "value": {  "_id": "59632", "city": "BOULDER",          "loc": [ -112.113757, 46.230647 ], "pop": 1737.0,  "state": "MT", "1": "BOULDER, MT",          "2": true  } },
-    { "value": {  "_id": "84716", "city": "BOULDER",          "loc": [ -111.426646, 37.916606 ], "pop": 131.0,   "state": "UT", "1": "BOULDER, UT",          "2": true  } },
-    { "value": {  "_id": "82923", "city": "BOULDER",          "loc": [ -109.540105, 42.688146 ], "pop": 112.0,   "state": "WY", "1": "BOULDER, WY",          "2": true  } },
-    { "value": {  "_id": "89005", "city": "BOULDER CITY",     "loc": [ -114.834413, 35.972711 ], "pop": 12920.0, "state": "NV", "1": "BOULDER CITY, NV",     "2": false } },
-    { "value": {  "_id": "95006", "city": "BOULDER CREEK",    "loc": [ -122.133053, 37.149934 ], "pop": 9434.0,  "state": "CA", "1": "BOULDER CREEK, CA",    "2": false } },
-    { "value": {  "_id": "54512", "city": "BOULDER JUNCTION", "loc": [ -89.632454, 46.111183 ],  "pop": 563.0,   "state": "WI", "1": "BOULDER JUNCTION, WI", "2": false } }
+    { "_id": "80301", "city": "BOULDER",          "loc": [ -105.21426, 40.049733 ],  "pop": 18174.0, "state": "CO", "city_state": "BOULDER, CO",          "boulderish": true  },
+    { "_id": "80302", "city": "BOULDER",          "loc": [ -105.285131, 40.017235 ], "pop": 29384.0, "state": "CO", "city_state": "BOULDER, CO",          "boulderish": true  },
+    { "_id": "80303", "city": "BOULDER",          "loc": [ -105.239178, 39.991381 ], "pop": 39860.0, "state": "CO", "city_state": "BOULDER, CO",          "boulderish": true  },
+    { "_id": "80304", "city": "BOULDER",          "loc": [ -105.277073, 40.037482 ], "pop": 21550.0, "state": "CO", "city_state": "BOULDER, CO",          "boulderish": true  },
+    { "_id": "59632", "city": "BOULDER",          "loc": [ -112.113757, 46.230647 ], "pop": 1737.0,  "state": "MT", "city_state": "BOULDER, MT",          "boulderish": true  },
+    { "_id": "84716", "city": "BOULDER",          "loc": [ -111.426646, 37.916606 ], "pop": 131.0,   "state": "UT", "city_state": "BOULDER, UT",          "boulderish": true  },
+    { "_id": "82923", "city": "BOULDER",          "loc": [ -109.540105, 42.688146 ], "pop": 112.0,   "state": "WY", "city_state": "BOULDER, WY",          "boulderish": true  },
+    { "_id": "89005", "city": "BOULDER CITY",     "loc": [ -114.834413, 35.972711 ], "pop": 12920.0, "state": "NV", "city_state": "BOULDER CITY, NV",     "boulderish": false },
+    { "_id": "95006", "city": "BOULDER CREEK",    "loc": [ -122.133053, 37.149934 ], "pop": 9434.0,  "state": "CA", "city_state": "BOULDER CREEK, CA",    "boulderish": false },
+    { "_id": "54512", "city": "BOULDER JUNCTION", "loc": [ -89.632454, 46.111183 ],  "pop": 563.0,   "state": "WI", "city_state": "BOULDER JUNCTION, WI", "boulderish": false }
   ]
 }

@@ -189,8 +189,8 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
   }
 
   def compactQC = λ[QScriptCore ~> (Option ∘ QScriptCore)#λ] {
-    case LeftShift(src, struct, repair) =>
-      rewriteShift(struct, repair) ∘ (xy => LeftShift(src, xy._1, xy._2))
+    case LeftShift(src, struct, id, repair) =>
+      rewriteShift(id, repair) ∘ (xy => LeftShift(src, struct, xy._1, xy._2))
 
     case Reduce(src, bucket, reducers, repair0) =>
       // `indices`: the indices into `reducers` that are used

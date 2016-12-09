@@ -1,0 +1,13 @@
+{
+    "name": "distinct * (MongoDB)",
+    "backends": {
+        "mongodb_read_only": "pending",
+        "postgresql":        "skip",
+        "marklogic":         "skip",
+        "couchbase":         "skip"
+    },
+    "data": "../cities.data",
+    "query": "select distinct * from `../cities` where city = \"BOSTON\"",
+    "predicate": "equalsExactly",
+    "expected": [{ "value": { "city": "BOSTON" } }]
+}

@@ -1,9 +1,7 @@
 {
     "name": "match on ObjectId",
     "backends": {
-        "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "postgresql": "pending"
     },
     "data": "days.data",
     "query": "select day from days where _id = oid(\"54b6f430d4c654959e963a62\")",

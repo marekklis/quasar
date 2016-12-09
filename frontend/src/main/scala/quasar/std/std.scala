@@ -16,8 +16,6 @@
 
 package quasar.std
 
-import quasar.Predef._
-
 trait StdLib extends Library {
   val math = MathLib
 
@@ -36,9 +34,5 @@ trait StdLib extends Library {
   val string = StringLib
 
   val date = DateLib
-
-  val unaryFunctions = math.unaryFunctions ++ structural.unaryFunctions ++ agg.unaryFunctions ++ identity.unaryFunctions ++ relations.unaryFunctions ++ set.unaryFunctions ++ array.unaryFunctions ++ string.unaryFunctions ++ date.unaryFunctions ++ Nil
-  val binaryFunctions = math.binaryFunctions ++ structural.binaryFunctions ++ agg.binaryFunctions ++ identity.binaryFunctions ++ relations.binaryFunctions ++ set.binaryFunctions ++ array.binaryFunctions ++ string.binaryFunctions ++ date.binaryFunctions ++ Nil
-  val ternaryFunctions = math.ternaryFunctions ++ structural.ternaryFunctions ++ agg.ternaryFunctions ++ identity.ternaryFunctions ++ relations.ternaryFunctions ++ set.ternaryFunctions ++ array.ternaryFunctions ++ string.ternaryFunctions ++ date.ternaryFunctions ++ Nil
 }
 object StdLib extends StdLib

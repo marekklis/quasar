@@ -17,7 +17,8 @@
 package quasar.std
 
 import quasar.Predef._
-import quasar.{Data, Func, LogicalPlan, Type, Mapping, UnaryFunc, BinaryFunc, TernaryFunc, GenericFunc}, LogicalPlan._
+import quasar.{Data, Func, Type, Mapping, UnaryFunc, BinaryFunc, TernaryFunc, GenericFunc}
+import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 
 import matryoshka._
 import scalaz._, Scalaz._, Validation.success
@@ -27,7 +28,6 @@ import shapeless._
 trait RelationsLib extends Library {
   val Eq = BinaryFunc(
     Mapping,
-    "(=)",
     "Determines if two values are equal",
     Type.Bool,
     Func.Input2(Type.Top, Type.Top),
@@ -46,7 +46,6 @@ trait RelationsLib extends Library {
 
   val Neq = BinaryFunc(
     Mapping,
-    "(<>)",
     "Determines if two values are not equal",
     Type.Bool,
     Func.Input2(Type.Top, Type.Top),
@@ -65,7 +64,6 @@ trait RelationsLib extends Library {
 
   val Lt = BinaryFunc(
     Mapping,
-    "(<)",
     "Determines if one value is less than another value of the same type",
     Type.Bool,
     Func.Input2(Type.Comparable, Type.Comparable),
@@ -82,7 +80,6 @@ trait RelationsLib extends Library {
 
   val Lte = BinaryFunc(
     Mapping,
-    "(<=)",
     "Determines if one value is less than or equal to another value of the same type",
     Type.Bool,
     Func.Input2(Type.Comparable, Type.Comparable),
@@ -99,7 +96,6 @@ trait RelationsLib extends Library {
 
   val Gt = BinaryFunc(
     Mapping,
-    "(>)",
     "Determines if one value is greater than another value of the same type",
     Type.Bool,
     Func.Input2(Type.Comparable, Type.Comparable),
@@ -116,7 +112,6 @@ trait RelationsLib extends Library {
 
   val Gte = BinaryFunc(
     Mapping,
-    "(>=)",
     "Determines if one value is greater than or equal to another value of the same type",
     Type.Bool,
     Func.Input2(Type.Comparable, Type.Comparable),
@@ -133,7 +128,6 @@ trait RelationsLib extends Library {
 
   val Between = TernaryFunc(
     Mapping,
-    "(BETWEEN)",
     "Determines if a value is between two other values of the same type, inclusive",
     Type.Bool,
     Func.Input3(Type.Comparable, Type.Comparable, Type.Comparable),
@@ -147,7 +141,6 @@ trait RelationsLib extends Library {
 
   val IfUndefined = BinaryFunc(
     Mapping,
-    "(??)",
     "This is the only way to recognize an undefined value. If the first argument is undefined, return the second argument, otherwise, return the first.",
     Type.Top,
     Func.Input2(Type.Top, Type.Top),
@@ -160,15 +153,14 @@ trait RelationsLib extends Library {
 
   val And = BinaryFunc(
     Mapping,
-    "(AND)",
     "Performs a logical AND of two boolean values",
     Type.Bool,
     Func.Input2(Type.Bool, Type.Bool),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(ConstantF(Data.True)), Embed(r))) => r.some
-          case InvokeF(_, Sized(Embed(l), Embed(ConstantF(Data.True)))) => l.some
+          case Invoke(_, Sized(Embed(Constant(Data.True)), Embed(r))) => r.some
+          case Invoke(_, Sized(Embed(l), Embed(Constant(Data.True)))) => l.some
           case _                                                       => None
         }
     },
@@ -184,15 +176,14 @@ trait RelationsLib extends Library {
 
   val Or = BinaryFunc(
     Mapping,
-    "(OR)",
     "Performs a logical OR of two boolean values",
     Type.Bool,
     Func.Input2(Type.Bool, Type.Bool),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(ConstantF(Data.False)), Embed(r))) => r.some
-          case InvokeF(_, Sized(Embed(l), Embed(ConstantF(Data.False)))) => l.some
+          case Invoke(_, Sized(Embed(Constant(Data.False)), Embed(r))) => r.some
+          case Invoke(_, Sized(Embed(l), Embed(Constant(Data.False)))) => l.some
           case _                                                        => None
         }
     },
@@ -208,7 +199,6 @@ trait RelationsLib extends Library {
 
   val Not = UnaryFunc(
     Mapping,
-    "NOT",
     "Performs a logical negation of a boolean value",
     Type.Bool,
     Func.Input1(Type.Bool),
@@ -221,16 +211,15 @@ trait RelationsLib extends Library {
 
   val Cond = TernaryFunc(
     Mapping,
-    "(IF_THEN_ELSE)",
     "Chooses between one of two cases based on the value of a boolean expression",
     Type.Bottom,
     Func.Input3(Type.Bool, Type.Top, Type.Top),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
+      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
         orig match {
-          case InvokeF(_, Sized(Embed(ConstantF(Data.True)),  Embed(c), _)) => c.some
-          case InvokeF(_, Sized(Embed(ConstantF(Data.False)), _, Embed(a))) => a.some
-          case _                                                           => None
+          case Invoke(_, Sized(Embed(Constant(Data.True)),  Embed(c), _)) => c.some
+          case Invoke(_, Sized(Embed(Constant(Data.False)), _, Embed(a))) => a.some
+          case _                                                            => None
         }
     },
     partialTyper[nat._3] {
@@ -239,40 +228,6 @@ trait RelationsLib extends Library {
       case Sized(Type.Bool, ifTrue, ifFalse) => Type.lub(ifTrue, ifFalse)
     },
     untyper[nat._3](t => success(Func.Input3(Type.Bool, t, t))))
-
-  val Coalesce = BinaryFunc(
-    Mapping, 
-    "coalesce",
-    "Returns the first of its arguments that isn't null.",
-    Type.Bottom,
-    Func.Input2(Type.Top, Type.Top),
-    new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LogicalPlan[T[LogicalPlan]]) =
-        orig match {
-          case InvokeF(_, Sized(Embed(ConstantF(Data.Null)), Embed(second))) => second.some
-          case InvokeF(_, Sized(Embed(first), Embed(ConstantF(Data.Null))))  => first.some
-          case _                                                            => None
-        }
-    },
-    partialTyper[nat._2] {
-      case Sized(Type.Null, v2) => v2
-      case Sized(Type.Const(Data.Null), v2) => v2
-      case Sized(Type.Const(v1), _ ) => Type.Const(v1)
-      case Sized(v1, Type.Null) => v1
-      case Sized(v1, Type.Const(Data.Null)) => v1
-      case Sized(v1, v2) => Type.lub(v1, v2)
-    },
-    untyper[nat._2] {
-      case Type.Null => success(Func.Input2(Type.Null, Type.Null))
-      case t         => success(Func.Input2(t ⨿ Type.Null, Type.Top))
-    })
-
-  def unaryFunctions: List[GenericFunc[nat._1]] = Not :: Nil
-
-  def binaryFunctions: List[GenericFunc[nat._2]] =
-    Eq :: Neq :: Lt :: Lte :: Gt :: Gte :: IfUndefined :: And :: Or :: Coalesce :: Nil
-
-  def ternaryFunctions: List[GenericFunc[nat._3]] = Between :: Cond :: Nil
 
   def flip(f: GenericFunc[nat._2]): Option[GenericFunc[nat._2]] = f match {
     case Eq  => Some(Eq)

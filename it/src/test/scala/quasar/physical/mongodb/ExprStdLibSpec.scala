@@ -20,6 +20,7 @@ import quasar.Predef._
 import quasar._, Planner.{PlannerError, InternalError}
 import quasar.std.StdLib._
 import quasar.fp.ski._
+import quasar.frontend.logicalplan.LogicalPlan
 import quasar.physical.mongodb.fs._
 import quasar.physical.mongodb.planner.MongoDbPlanner
 import quasar.physical.mongodb.workflow._
@@ -37,6 +38,8 @@ import shapeless.Nat
   * then simply fails if it finds that the generated plan required map-reduce.
   */
 class MongoDbExprStdLibSpec extends MongoDbStdLibSpec {
+  import quasar.frontend.fixpoint.lpf
+
   val notHandled = Skipped("not implemented in aggregation")
 
   /** Identify constructs that are expected not to be implemented in the pipeline. */
@@ -47,11 +50,13 @@ class MongoDbExprStdLibSpec extends MongoDbStdLibSpec {
     case (string.ToString, _) => notHandled.left
 
     case (date.ExtractIsoYear, _) => notHandled.left
-    case (date.ExtractQuarter, _) => Skipped("TODO").left
+    case (date.ExtractWeek, _)    => Skipped("Implemented, but not ISO compliant").left
 
     case (date.TimeOfDay, _) if is2_6(backend) => Skipped("not implemented in aggregation on MongoDB 2.6").left
 
     case (math.Power, _) if !is3_2(backend) => Skipped("not implemented in aggregation on MongoDB < 3.2").left
+
+    case (structural.ConcatOp, _)   => notHandled.left
 
     case _                  => ().right
   }
@@ -60,7 +65,7 @@ class MongoDbExprStdLibSpec extends MongoDbStdLibSpec {
       : PlannerError \/ (Crystallized[WorkflowF], BsonField.Name) = {
     val wrapped =
       Fix(structural.MakeObject(
-        LogicalPlan.Constant(Data.Str("result")),
+        lpf.constant(Data.Str("result")),
         lp))
 
     val ctx = QueryContext(queryModel, κ(None), κ(None))
@@ -72,7 +77,7 @@ class MongoDbExprStdLibSpec extends MongoDbStdLibSpec {
           case IsPipeline(p) => p.src
           case _             => false
         }
-        if (singlePipeline) wf.right else InternalError("compiled to map-reduce").left
+        if (singlePipeline) wf.right else InternalError.fromMsg("compiled to map-reduce").left
       }
       .strengthR(BsonField.Name("result"))
   }

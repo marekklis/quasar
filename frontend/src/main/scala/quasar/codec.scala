@@ -19,6 +19,9 @@ package quasar
 import quasar.Predef._
 import quasar.fp._
 import quasar.fp.ski._
+
+import java.time.format.DateTimeFormatter
+
 import argonaut._, Argonaut._
 import scalaz._, Scalaz._
 
@@ -87,7 +90,7 @@ object DataCodec {
 
         case Timestamp(value) => \/-(Json.obj(TimestampKey -> jString(value.toString)))
         case Date(value)      => \/-(Json.obj(DateKey      -> jString(value.toString)))
-        case Time(value)      => \/-(Json.obj(TimeKey      -> jString(value.toString)))
+        case Time(value)      => \/-(Json.obj(TimeKey      -> jString(value.format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS")))))
         case Interval(value)  => \/-(Json.obj(IntervalKey  -> jString(value.toString)))
 
         case bin @ Binary(_)  => \/-(Json.obj(BinaryKey    -> jString(bin.base64)))

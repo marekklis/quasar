@@ -17,8 +17,8 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
+import quasar.common.SortDir
 import quasar.javascript._
-import quasar.qscript._
 
 import com.mongodb.client.model.MapReduceAction
 import monocle.macros.GenLens

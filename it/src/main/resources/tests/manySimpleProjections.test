@@ -3,8 +3,7 @@
 
   "backends": {
     "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "couchbase":  "skipCI"
   },
 
   "data": "zips.data",

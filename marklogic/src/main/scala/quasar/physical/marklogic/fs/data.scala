@@ -19,36 +19,18 @@ package quasar.physical.marklogic.fs
 import quasar.Predef._
 import quasar.Data
 import quasar.physical.marklogic.{ErrorMessages, MonadErrMsgs}
+import quasar.physical.marklogic.prisms._
 import quasar.physical.marklogic.xml._
 import quasar.physical.marklogic.xml.namespaces._
 
 import scala.xml._
 import scala.collection.immutable.Seq
-import java.util.Base64
 
 import eu.timepit.refined.auto._
-import jawn._
 import monocle.Prism
-import org.threeten.bp._
-import org.threeten.bp.format._
-import org.threeten.bp.temporal.TemporalAccessor
 import scalaz.{Node => _, _}, Scalaz._
 
 object data {
-  object JsonParser extends SupportParser[Data] {
-    implicit val facade: Facade[Data] =
-      new SimpleFacade[Data] {
-        def jarray(arr: List[Data])         = Data.Arr(arr)
-        def jobject(obj: Map[String, Data]) = Data.Obj(ListMap(obj.toList: _*))
-        def jnull()                         = Data.Null
-        def jfalse()                        = Data.False
-        def jtrue()                         = Data.True
-        def jnum(n: String)                 = Data.Dec(BigDecimal(n))
-        def jint(n: String)                 = Data.Int(BigInt(n))
-        def jstring(s: String)              = Data.Str(s)
-      }
-  }
-
   def encodeXml[F[_]: MonadErrMsgs](data: Data): F[Elem] = {
     def typeAttr(tpe: DataType): Attribute =
       Attribute(ejsBinding.prefix, ejsonType.local.shows, tpe.shows, Null)
@@ -81,18 +63,18 @@ object data {
       }
 
       elementName => {
-        case Data.Binary(bytes) => elem(elementName, DT.Binary   , Text(base64(bytes))          ).success
+        case Data.Binary(bytes) => elem(elementName, DT.Binary   , Text(base64Bytes(bytes))     ).success
         case Data.Bool(b)       => elem(elementName, DT.Boolean  , Text(b.fold("true", "false"))).success
-        case Data.Date(d)       => elem(elementName, DT.Date     , Text(localDate(d))           ).success
+        case Data.Date(d)       => elem(elementName, DT.Date     , Text(isoLocalDate(d))        ).success
         case Data.Dec(d)        => elem(elementName, DT.Decimal  , Text(d.toString)             ).success
         case Data.Id(id)        => elem(elementName, DT.Id       , Text(id)                     ).success
         case Data.Int(i)        => elem(elementName, DT.Integer  , Text(i.toString)             ).success
-        case Data.Interval(d)   => elem(elementName, DT.Interval , Text(duration(d))            ).success
+        case Data.Interval(d)   => elem(elementName, DT.Interval , Text(durationInSeconds(d))   ).success
         case Data.NA            => elem(elementName, DT.NA       , Nil                          ).success
         case Data.Null          => elem(elementName, DT.Null     , Nil                          ).success
         case Data.Str(s)        => str(elementName               , s                            ).success
-        case Data.Time(t)       => elem(elementName, DT.Time     , Text(localTime(t))           ).success
-        case Data.Timestamp(ts) => elem(elementName, DT.Timestamp, Text(instant(ts))            ).success
+        case Data.Time(t)       => elem(elementName, DT.Time     , Text(isoLocalTime(t))        ).success
+        case Data.Timestamp(ts) => elem(elementName, DT.Timestamp, Text(isoInstant(ts))         ).success
 
         case Data.Arr(elements) =>
           elements traverse loop(ejsonArrayElt) map (elem(elementName, DT.Array, _))
@@ -117,7 +99,7 @@ object data {
         elements(children).toList traverse decodeXml0 map (Data._arr(_))
 
       case DataNode(DT.Binary, Txt(b64)) =>
-        base64.getOption(b64)
+        base64Bytes.getOption(b64)
           .map(bytes => Data._binary(bytes))
           .toSuccessNel(s"Expected Base64-encoded binary data, found: $b64")
 
@@ -128,7 +110,7 @@ object data {
       case DataNode(DT.Boolean, Txt("false")) => Data._bool(false).success
 
       case DataNode(DT.Date, Txt(d)) =>
-        localDate.getOption(d)
+        isoLocalDate.getOption(d)
           .map(Data._date(_))
           .toSuccessNel(s"Expected an ISO-8601 formatted local date, found: $d")
 
@@ -146,7 +128,7 @@ object data {
           .leftAs(s"Expected an integral number, found: $n".wrapNel)
 
       case DataNode(DT.Interval, Txt(ivl)) =>
-        duration.getOption(ivl)
+        durationInSeconds.getOption(ivl)
           .map(Data._interval(_))
           .toSuccessNel(s"Expected a duration in seconds, found: $ivl")
 
@@ -163,12 +145,12 @@ object data {
       case DataNode(DT.String, Seq() ) => Data._str("").success
 
       case DataNode(DT.Time, Txt(t)) =>
-        localTime.getOption(t)
+        isoLocalTime.getOption(t)
           .map(Data._time(_))
           .toSuccessNel(s"Expected an ISO-8601 formatted local time, found: $t")
 
       case DataNode(DT.Timestamp, Txt(ts)) =>
-        instant.getOption(ts)
+        isoInstant.getOption(ts)
           .map(Data._timestamp(_))
           .toSuccessNel(s"Expected an ISO-8601 formatted date-time, found: $ts")
 
@@ -252,33 +234,6 @@ object data {
     def unapply(nodes: Seq[Node]): Option[String] =
       nodes.headOption collect { case Text(s) => s }
   }
-
-  // xs:base64Binary
-  private val base64 = Prism[String, ImmutableArray[Byte]](
-    s => \/.fromTryCatchNonFatal(Base64.getDecoder.decode(s)).map(ImmutableArray.fromArray).toOption)(
-    (Base64.getEncoder.encodeToString(_)) compose (_.toArray))
-
-  // xs:date
-  private val localDate: Prism[String, LocalDate] = temporal(LocalDate.from, DateTimeFormatter.ISO_LOCAL_DATE)
-  // xs:time
-  private val localTime: Prism[String, LocalTime] = temporal(LocalTime.from, DateTimeFormatter.ISO_LOCAL_TIME)
-  // xs:dateTime
-  private val instant: Prism[String, Instant]     = temporal(Instant.from  , DateTimeFormatter.ISO_INSTANT)
-
-  private def temporal[T <: TemporalAccessor](f: TemporalAccessor => T, fmt: DateTimeFormatter): Prism[String, T] =
-    Prism[String, T](s => \/.fromTryCatchNonFatal(f(fmt.parse(s))).toOption)(fmt.format)
-
-  private val DurationEncoding = "(-?\\d+)(?:\\.(\\d+))?".r
-
-  private val duration = Prism[String, Duration] {
-    case DurationEncoding(secs, nanos) =>
-      \/.fromTryCatchNonFatal(Duration.ofSeconds(secs.toLong, nanos.toLong)).toOption
-
-    case DurationEncoding(secs) =>
-      \/.fromTryCatchNonFatal(Duration.ofSeconds(secs.toLong)).toOption
-
-    case _ => None
-  } (d => s"${d.getSeconds}.${d.getNano}")
 
   private val ejsBinding: NamespaceBinding =
     NamespaceBinding(ejsonNs.prefix.shows, ejsonNs.uri.shows, TopScope)

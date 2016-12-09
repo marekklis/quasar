@@ -2,9 +2,7 @@
   "name": "filter on date part",
 
   "backends": {
-    "postgresql": "pending",
-    "marklogic":  "skip",
-    "couchbase":  "skip"
+    "postgresql": "pending"
   },
 
   "data": "../days.data",

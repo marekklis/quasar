@@ -19,7 +19,7 @@ package quasar.std
 import quasar.Predef._
 import quasar._
 
-import org.threeten.bp.Duration
+import java.time.Duration
 import scalaz._, Validation.{success, failureNel}
 import scalaz.std.list._
 import scalaz.std.option._
@@ -35,7 +35,6 @@ trait AggLib extends Library {
 
   val Count = UnaryFunc(
     Reduction,
-    "COUNT",
     "Counts the values in a set",
     Type.Int,
     Func.Input1(Type.Top),
@@ -48,7 +47,6 @@ trait AggLib extends Library {
 
   val Sum = UnaryFunc(
     Reduction,
-    "SUM",
     "Sums the values in a set",
     Type.Numeric ⨿ Type.Interval,
     Func.Input1(Type.Numeric ⨿ Type.Interval),
@@ -79,7 +77,6 @@ trait AggLib extends Library {
 
   val Min = UnaryFunc(
     Reduction,
-    "MIN",
     "Finds the minimum in a set of values",
     Type.Comparable,
     Func.Input1(Type.Comparable),
@@ -96,7 +93,6 @@ trait AggLib extends Library {
 
   val Max = UnaryFunc(
     Reduction,
-    "MAX",
     "Finds the maximum in a set of values",
     Type.Comparable,
     Func.Input1(Type.Comparable),
@@ -113,7 +109,6 @@ trait AggLib extends Library {
 
   val Avg = UnaryFunc(
     Reduction,
-    "AVG",
     "Finds the average in a set of numeric values",
     Type.Numeric ⨿ Type.Interval,
     Func.Input1(Type.Numeric ⨿ Type.Interval),
@@ -134,7 +129,6 @@ trait AggLib extends Library {
 
   val Arbitrary = UnaryFunc(
     Reduction,
-    "ARBITRARY",
     "Returns an arbitrary value from a set",
     Type.Top,
     Func.Input1(Type.Top),
@@ -150,12 +144,6 @@ trait AggLib extends Library {
         success(t)
     },
     reflexiveUntyper)
-
-  def unaryFunctions: List[GenericFunc[nat._1]] =
-    Count :: Sum :: Min :: Max :: Avg :: Arbitrary :: Nil
-
-  def binaryFunctions: List[GenericFunc[nat._2]] = Nil
-  def ternaryFunctions: List[GenericFunc[nat._3]] = Nil
 
   ////
 

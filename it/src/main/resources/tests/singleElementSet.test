@@ -2,12 +2,12 @@
     "name": "filter field in single-element set",
     "backends": {
         "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "couchbase":  "skipCI"
     },
     "data": "zips.data",
     "query": "select * from zips where state in (\"MA\") and pop < 10",
     "predicate": "containsExactly",
+    "ignoredFields": ["_id"],
     "expected": [
         { "city": "CAMBRIDGE", "loc": [-71.141879, 42.364005], "pop": 0, "state": "MA" }]
 }

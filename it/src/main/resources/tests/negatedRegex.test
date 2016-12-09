@@ -2,22 +2,21 @@
     "name": "negate matches in filter and projection",
     "backends": {
         "mongodb_read_only": "pending",
-        "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "largeZips.data",
-    "query": "select city, city !~ \"A\" from largeZips where city !~ \"CHI\"",
+    "query": "select city, city !~ \"A\" as noA from largeZips where city !~ \"CHI\"",
     "predicate": "containsAtLeast",
+    "ignoreFieldOrder": [ "couchbase" ],
     "expected": [
-        { "city": "CUSHMAN",     "1": false },
-        { "city": "WORCESTER",   "1":  true },
-        { "city": "FRAMINGHAM",  "1": false },
-        { "city": "MARLBOROUGH", "1": false },
-        { "city": "MILFORD",     "1":  true },
-        { "city": "NATICK",      "1": false },
-        { "city": "WOBURN",      "1":  true },
-        { "city": "ANDOVER",     "1": false },
-        { "city": "BILLERICA",   "1": false },
-        { "city": "DRACUT",      "1": false }]
+        { "city": "CUSHMAN",     "noA": false },
+        { "city": "WORCESTER",   "noA":  true },
+        { "city": "FRAMINGHAM",  "noA": false },
+        { "city": "MARLBOROUGH", "noA": false },
+        { "city": "MILFORD",     "noA":  true },
+        { "city": "NATICK",      "noA": false },
+        { "city": "WOBURN",      "noA":  true },
+        { "city": "ANDOVER",     "noA": false },
+        { "city": "BILLERICA",   "noA": false },
+        { "city": "DRACUT",      "noA": false }]
 }

@@ -1,7 +1,13 @@
 {
   "name": "filter on time_of_day",
 
+  "NB": "Couchbase disabled due to heap exhaustion",
+
   "backends": {
+    "mongodb_2_6":       "pending",
+    "mongodb_3_0":       "pending",
+    "mongodb_read_only": "pending",
+    "mongodb_3_2":       "pending",
     "postgresql":        "pending",
     "marklogic":         "skip",
     "couchbase":         "skip"
@@ -13,8 +19,9 @@
     where time_of_day(ts) >= time(\"08:00\") and time_of_day(ts) < time(\"10:20:30.400\")",
 
   "predicate": "containsExactly",
+  "ignoreFieldOrder": [ "couchbase" ],
   "expected": [
-      { "day": "Tuesday",   "tod": "08:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} },
-      { "day": "Wednesday", "tod": "09:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} },
-      { "day": "Thursday",  "tod": "10:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} }]
+      { "day": "Tuesday",   "tod": { "$time": "08:00:00.000" }, "not a date": {"$na": null}, "missing": {"$na": null} },
+      { "day": "Wednesday", "tod": { "$time": "09:00:00.000" }, "not a date": {"$na": null}, "missing": {"$na": null} },
+      { "day": "Thursday",  "tod": { "$time": "10:00:00.000" }, "not a date": {"$na": null}, "missing": {"$na": null} }]
 }

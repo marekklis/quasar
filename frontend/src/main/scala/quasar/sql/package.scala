@@ -192,7 +192,7 @@ package object sql {
             ("group by" ::
               g.keys.map(_._2).mkString(", ") ::
               g.having.map("having " + _._2).toList).mkString(" ")),
-          orderBy.map(o => List("order by", o.keys.map(x => x._2._2 + " " + x._1.shows) mkString(", ")).mkString(" "))).foldMap(_.toList).mkString(" ") +
+          orderBy.map(o => List("order by", o.keys.map(x => x._2._2 + " " + x._1.shows) intercalate (", ")).mkString(" "))).foldMap(_.toList).mkString(" ") +
         ")"
       case Vari(symbol) => ":" + symbol
       case SetLiteral(exprs) => exprs.map(_._2).mkString("(", ", ", ")")
@@ -225,11 +225,10 @@ package object sql {
       }
       case Ident(name) => _qq("`", name)
       case InvokeFunction(name, args) =>
-        import quasar.std.StdLib.string
         (name, args) match {
-          case (string.Like.name, (_, value) :: (_, pattern) :: (Embed(StringLiteral("\\")), _) :: Nil) =>
+          case ("like", (_, value) :: (_, pattern) :: (Embed(StringLiteral("\\")), _) :: Nil) =>
             "(" + value + ") like (" + pattern + ")"
-          case (string.Like.name, (_, value) :: (_, pattern) :: (_, esc) :: Nil) =>
+          case ("like", (_, value) :: (_, pattern) :: (_, esc) :: Nil) =>
             "(" + value + ") like (" + pattern + ") escape (" + esc + ")"
           case _ => name + "(" + args.map(_._2).mkString(", ") + ")"
         }
@@ -276,91 +275,5 @@ package object sql {
       case JoinRelation(left, right, tpe, clause) =>
         G.apply3(traverseRelation(left, f), traverseRelation(right, f), f(clause))(
           JoinRelation(_, _, tpe, _))
-    }
-
-  private val astType = "AST" :: Nil
-
-  implicit def ExprRelationRenderTree: Delay[RenderTree, SqlRelation] =
-    new Delay[RenderTree, SqlRelation] {
-      def apply[A](ra: RenderTree[A]) = new RenderTree[SqlRelation[A]] {
-        def render(r: SqlRelation[A]): RenderedTree = r match {
-          case IdentRelationAST(name, alias) =>
-            val aliasString = alias.cata(" as " + _, "")
-            Terminal("IdentRelation" :: astType, Some(name + aliasString))
-          case VariRelationAST(vari, alias) =>
-            val aliasString = alias.cata(" as " + _, "")
-            Terminal("VariRelation" :: astType, Some(":" + vari.symbol + aliasString))
-          case ExprRelationAST(select, alias) =>
-            NonTerminal("ExprRelation" :: astType, Some("Expr as " + alias), ra.render(select) :: Nil)
-          case TableRelationAST(name, alias) =>
-            val aliasString = alias.cata(" as " + _, "")
-            Terminal("TableRelation" :: astType, Some(prettyPrint(name) + aliasString))
-          case JoinRelation(left, right, jt, clause) =>
-            NonTerminal("JoinRelation" :: astType, Some(jt.shows),
-              List(render(left), render(right), ra.render(clause)))
-        }
-      }
-    }
-
-  implicit val SqlRenderTree: Delay[RenderTree, Sql] =
-    new Delay[RenderTree, Sql] {
-      def apply[A](ra: RenderTree[A]): RenderTree[Sql[A]] = new RenderTree[Sql[A]] {
-        def renderCase(c: Case[A]): RenderedTree =
-          NonTerminal("Case" :: astType, None, ra.render(c.cond) :: ra.render(c.expr) :: Nil)
-
-        def render(n: Sql[A]) = n match {
-          case Select(isDistinct, projections, relations, filter, groupBy, orderBy) =>
-            val nt = "Select" :: astType
-            NonTerminal(nt,
-              isDistinct match { case `SelectDistinct` => Some("distinct"); case _ => None },
-              projections.map { p =>
-                NonTerminal("Proj" :: astType, p.alias, ra.render(p.expr) :: Nil)
-              } ⊹
-                (relations.map(ExprRelationRenderTree(ra).render) ::
-                  filter.map(ra.render) ::
-                  groupBy.map {
-                    case GroupBy(keys, Some(having)) => NonTerminal("GroupBy" :: astType, None, keys.map(ra.render) :+ ra.render(having))
-                    case GroupBy(keys, None)         => NonTerminal("GroupBy" :: astType, None, keys.map(ra.render))
-                  } ::
-                  orderBy.map {
-                    case OrderBy(keys) =>
-                      val nt = "OrderBy" :: astType
-                      NonTerminal(nt, None,
-                        keys.map { case (t, x) => NonTerminal("OrderType" :: nt, Some(t.shows), ra.render(x) :: Nil)})
-                  } ::
-                  Nil).foldMap(_.toList))
-
-          case SetLiteral(exprs) => NonTerminal("Set" :: astType, None, exprs.map(ra.render))
-          case ArrayLiteral(exprs) => NonTerminal("Array" :: astType, None, exprs.map(ra.render))
-          case MapLiteral(exprs) => NonTerminal("Map" :: astType, None, exprs.map(Tuple2RenderTree(ra, ra).render))
-
-          case InvokeFunction(name, args) => NonTerminal("InvokeFunction" :: astType, Some(name), args.map(ra.render))
-
-          case Match(expr, cases, Some(default)) => NonTerminal("Match" :: astType, None, ra.render(expr) :: (cases.map(renderCase) :+ ra.render(default)))
-          case Match(expr, cases, None)          => NonTerminal("Match" :: astType, None, ra.render(expr) :: cases.map(renderCase))
-
-          case Switch(cases, Some(default)) => NonTerminal("Switch" :: astType, None, cases.map(renderCase) :+ ra.render(default))
-          case Switch(cases, None)          => NonTerminal("Switch" :: astType, None, cases.map(renderCase))
-
-          case Binop(lhs, rhs, op) => NonTerminal("Binop" :: astType, Some(op.toString), ra.render(lhs) :: ra.render(rhs) :: Nil)
-
-          case Unop(expr, op) => NonTerminal("Unop" :: astType, Some(op.sql), ra.render(expr) :: Nil)
-
-          case Splice(expr) => NonTerminal("Splice" :: astType, None, expr.toList.map(ra.render))
-
-          case Ident(name) => Terminal("Ident" :: astType, Some(name))
-
-          case Vari(name) => Terminal("Variable" :: astType, Some(":" + name))
-
-          case Let(name, form, body) =>
-            NonTerminal("Let" :: astType, Some(name), ra.render(form) :: ra.render(body) :: Nil)
-
-          case IntLiteral(v) => Terminal("LiteralExpr" :: astType, Some(v.shows))
-          case FloatLiteral(v) => Terminal("LiteralExpr" :: astType, Some(v.shows))
-          case StringLiteral(v) => Terminal("LiteralExpr" :: astType, Some(v.shows))
-          case NullLiteral() => Terminal("LiteralExpr" :: astType, None)
-          case BoolLiteral(v) => Terminal("LiteralExpr" :: astType, Some(v.shows))
-        }
-      }
     }
 }

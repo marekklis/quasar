@@ -27,7 +27,7 @@ import scala.collection.JavaConverters._
 import monocle.Prism
 import org.bson._
 import org.bson.types
-import org.threeten.bp.Instant
+import java.time.Instant
 import scalaz._, Scalaz._
 
 /**

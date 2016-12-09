@@ -1,0 +1,1 @@
+- [1693, 1694] Replace OrderBy function with Sort node in LogicalPlan

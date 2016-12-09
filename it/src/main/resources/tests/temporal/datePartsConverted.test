@@ -1,11 +1,8 @@
 {
-  "name": "date_part with all selectors, after conversion to JS (see #1238)",
+  "name": "date_part with (virtually) all selectors, after conversion to JS (see #1238)",
 
   "backends": {
-      "mongodb_2_6":       "pending",
-      "mongodb_3_0":       "pending",
       "mongodb_read_only": "pending",
-      "mongodb_3_2":       "pending",
       "postgresql":        "pending",
       "marklogic":         "skip",
       "couchbase":         "skip"
@@ -13,10 +10,9 @@
 
   "data": "../slamengine_commits.data",
 
-  "nb": "Currently pending for Mongo because the shape is somehow not handled for JS.
-         Also `doy` and `week` are missing because we currently have no JS implementation.",
+  "nb": "`doy` and `week` are missing because we currently have no JS implementation.",
   "query": "select
-              date_part(\"millennium\", timestamp(commit.committer.date)) as millenium,
+              date_part(\"millennium\", timestamp(commit.committer.date)) as millennium,
               date_part(\"century\", timestamp(commit.committer.date)) as century,
               date_part(\"decade\", timestamp(commit.committer.date)) as decade,
               date_part(\"year\", timestamp(commit.committer.date)) as year,
@@ -28,8 +24,8 @@
               date_part(\"hour\", timestamp(commit.committer.date)) as hour,
               date_part(\"minute\", timestamp(commit.committer.date)) as minute,
               date_part(\"second\", timestamp(commit.committer.date)) as second,
-              date_part(\"millisecond\", timestamp(commit.committer.date)) as millis,
-              date_part(\"microsecond\", timestamp(commit.committer.date)) as micros,
+              date_part(\"milliseconds\", timestamp(commit.committer.date)) as millis,
+              date_part(\"microseconds\", timestamp(commit.committer.date)) as micros,
               to_string(author.id) as id
               from `../slamengine_commits`",
 
@@ -37,9 +33,10 @@
 
   "expected": [
     {
-      "id": "33031",
-      "millennium": 2, "century": 20, "decade": 201, "year": 2015,
-      "doy": 1
+    "millennium": 3.0, "century": 21.0, "decade": 201.0, "year": 2015.0,
+    "quarter": 1.0, "month": 1.0, "dayOfMonth": 29.0, "dayOfWeek": 4.0, "dayOfWeek (ISO)": 4.0,
+    "hour": 15.0, "minute": 52.0, "second": 37.0, "millis": 37000.0, "micros": 3.7e7,
+    "id": "33031"
     }
   ]
 }

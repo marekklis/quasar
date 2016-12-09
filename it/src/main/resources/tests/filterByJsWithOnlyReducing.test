@@ -3,17 +3,15 @@
 
   "backends": {
       "mongodb_read_only": "pending",
-      "postgresql":        "pending",
-      "marklogic":         "skip",
-      "couchbase":         "skip"
+      "postgresql":        "pending"
   },
 
   "data": "largeZips.data",
 
-  "query": "select max(pop), min(city) from largeZips where length(city) < 6",
+  "query": "select max(pop) as max_pop, min(city) as min_city from largeZips where length(city) < 6",
 
   "predicate": "containsExactly",
   "expected": [
-    { "0": 85710, "1": "ABAC" }
+    { "max_pop": 85710, "min_city": "ABAC" }
   ]
 }

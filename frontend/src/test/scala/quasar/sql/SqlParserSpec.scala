@@ -161,7 +161,7 @@ class SQLParserSpec extends quasar.Qspec {
             TableRelationAST(file("from"), "from".some).some,
             IdentR("where").some,
             GroupBy(List(IdentR("group")), None).some,
-            OrderBy(List((ASC, IdentR("order")))).some))
+            OrderBy((ASC: OrderType, IdentR("order")).wrapNel).some))
     }
 
     "parse ambiguous keyword as identifier" in {

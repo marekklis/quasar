@@ -402,7 +402,7 @@ class DataServiceSpec extends quasar.Qspec with FileSystemFixture with Http4s {
             }
           val expectedData = List(
             Data.Obj(ListMap("a" -> Data.Int(1))),
-            Data.Obj(ListMap("b" -> Data.Time(org.threeten.bp.LocalTime.parse("12:34:56")))))
+            Data.Obj(ListMap("b" -> Data.Time(java.time.LocalTime.parse("12:34:56")))))
           "Json" >> {
             val line1 = Json("a" := 1)
             val preciseLine2 = Json("b" := Json("$time" := "12:34:56"))

@@ -1,22 +1,27 @@
 {
     "name": "union",
     "backends": {
-        "marklogic":         "skip",
+        "mongodb_2_6":       "pending",
+        "mongodb_3_0":       "pending",
         "mongodb_read_only": "pending",
+        "mongodb_3_2":       "pending",
         "postgresql":        "pending",
+        "marklogic":         "skip",
         "couchbase":         "skip"
     },
     "data": "zips.data",
     "query": "select _id as zip from zips union select city, state from zips",
     "predicate": "containsAtLeast",
-    "expected": [{ "value": { "zip": "01001" } },
-                 { "value": { "zip": "01002" } },
-                 { "value": { "zip": "01005" } },
-                 { "value": { "zip": "01007" } },
-                 { "value": { "zip": "01008" } },
-                 { "value": { "city" : "AGAWAM",      "state" : "MA" } },
-                 { "value": { "city" : "CUSHMAN",     "state" : "MA" } },
-                 { "value": { "city" : "BARRE",       "state" : "MA" } },
-                 { "value": { "city" : "BELCHERTOWN", "state" : "MA" } },
-                 { "value": { "city" : "BLANDFORD",   "state" : "MA" } }]
+    "expected": [
+        { "zip": "01001" },
+        { "zip": "01002" },
+        { "zip": "01005" },
+        { "zip": "01007" },
+        { "zip": "01008" },
+        { "city" : "AGAWAM",      "state" : "MA" },
+        { "city" : "CUSHMAN",     "state" : "MA" },
+        { "city" : "BARRE",       "state" : "MA" },
+        { "city" : "BELCHERTOWN", "state" : "MA" },
+        { "city" : "BLANDFORD",   "state" : "MA" }
+    ]
 }

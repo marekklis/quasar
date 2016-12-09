@@ -1,0 +1,1 @@
+- Use type aliases for CoEnv types in MapFunc.
