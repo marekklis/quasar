@@ -24,6 +24,7 @@ import quasar.fs._,
   FileSystemError._,
   PathError._
 import quasar.effect._
+import quasar.fp.free._
 import quasar.fs.impl.ensureMoveSemantics
 
 import org.apache.spark.SparkContext
@@ -34,101 +35,106 @@ import pathy._, Path._
 import scalaz._, Scalaz._
 
 object managefile {
-	
-	def interpret[S[_]](implicit
-		s0: Read.Ops[SparkContext, S]
-		): ManageFile ~> Free[S, ?] = 
-		new (ManageFile ~> Free[S, ?]) {
-			def apply[A](mf: ManageFile[A]): Free[S, A] = mf match {
-				case Move(FileToFile(sf, df), semantics) =>
+
+  def chrooted[S[_]](prefix: ADir)(implicit
+    s0: Read.Ops[SparkContext, S]
+  ): ManageFile ~> Free[S, ?] =
+    flatMapSNT(interpret) compose chroot.manageFile[ManageFile](prefix)
+  
+  def interpret[S[_]](implicit
+    s0: Read.Ops[SparkContext, S]
+    ): ManageFile ~> Free[S, ?] = 
+    new (ManageFile ~> Free[S, ?]) {
+      def apply[A](mf: ManageFile[A]): Free[S, A] = mf match {
+        case Move(FileToFile(sf, df), semantics) =>
           (ensureMoveSemantics[Free[S, ?]](sf, df, pathExists _, semantics).toLeft(()) *>
             moveFile(sf, df).liftM[FileSystemErrT]).run
         case Move(DirToDir(sd, dd), semantics) =>
           (ensureMoveSemantics[Free[S, ?]](sd, dd, pathExists _, semantics).toLeft(()) *>
             moveDir(sd, dd).liftM[FileSystemErrT]).run
-				case Delete(path) => delete(path)
-				case TempFile(near) => tempFile(near)
-			}
-		}
+        case Delete(path) => delete(path)
+        case TempFile(near) => tempFile(near)
+      }
+    }
 
-	def pathExists[S[_]](path: APath)(implicit 
-		read: Read.Ops[SparkContext, S]
-		): Free[S, Boolean] = 
-		read.asks { sc =>
-			CassandraConnector(sc.getConf).withSessionDo { implicit session =>
-				maybeFile(path)
-					.fold(keyspaceExists(keyspace(path)))(file => tableExists(keyspace(fileParent(file)), tableName(file)))
-		}
-	}
+  def pathExists[S[_]](path: APath)(implicit 
+    read: Read.Ops[SparkContext, S]
+    ): Free[S, Boolean] = 
+    read.asks { sc =>
+      CassandraConnector(sc.getConf).withSessionDo { implicit session =>
+        maybeFile(path)
+          .fold(keyspaceExists(keyspace(path)))(file => tableExists(keyspace(fileParent(file)), tableName(file)))
+    }
+  }
 
-	def moveFile[S[_]](sf: AFile, df: AFile)(implicit 
-		read: Read.Ops[SparkContext, S]
-		): Free[S, Unit] = {
-		read.asks { implicit sc =>
-			moveTable(sf, df)
-		}
-	}
+  def moveFile[S[_]](sf: AFile, df: AFile)(implicit 
+    read: Read.Ops[SparkContext, S]
+    ): Free[S, Unit] = {
+    read.asks { implicit sc =>
+      moveTable(sf, df)
+    }
+  }
 
-	private def moveTable(sf: AFile, df: AFile)(implicit sc: SparkContext) = {
-		sc.cassandraTable(keyspace(fileParent(sf)), tableName(sf))
-			.saveToCassandra(keyspace(fileParent(df)), tableName(df), SomeColumns("id", "data"))
-		CassandraConnector(sc.getConf).withSessionDo { implicit session =>
-			val r = dropTable(keyspace(fileParent(sf)), tableName(sf))
-		}
-	}
+  private def moveTable(sf: AFile, df: AFile)(implicit sc: SparkContext) = {
+    sc.cassandraTable(keyspace(fileParent(sf)), tableName(sf))
+      .saveToCassandra(keyspace(fileParent(df)), tableName(df), SomeColumns("id", "data"))
+    CassandraConnector(sc.getConf).withSessionDo { implicit session =>
+      val r = dropTable(keyspace(fileParent(sf)), tableName(sf))
+    }
+  }
 
-	def moveDir[S[_]](sd: ADir, dd: ADir)(implicit 
-		read: Read.Ops[SparkContext, S]
-		): Free[S, Unit] = {
-		read.asks { implicit sc =>
-			sc.cassandraTable[String]("system_schema", "tables").select("table_name").foreach {tn: String=>
-				moveTable(sd </> file(tn), dd </> file(tn))
-			}
-		}
-	}
+  def moveDir[S[_]](sd: ADir, dd: ADir)(implicit 
+    read: Read.Ops[SparkContext, S]
+    ): Free[S, Unit] = {
+    read.asks { implicit sc =>
+      sc.cassandraTable[String]("system_schema", "tables").select("table_name").foreach {tn: String=>
+        moveTable(sd </> file(tn), dd </> file(tn))
+      }
+    }
+  }
 
-	def delete[S[_]](path: APath)(implicit
-		read: Read.Ops[SparkContext, S]
-		): Free[S, FileSystemError \/ Unit] = 
-	read.asks { sc =>
-		CassandraConnector(sc.getConf).withSessionDo { implicit session =>
-			maybeFile(path).fold(deleteDir(path))(file => deleteFile(file))
-		}
-	}
+  def delete[S[_]](path: APath)(implicit
+    read: Read.Ops[SparkContext, S]
+    ): Free[S, FileSystemError \/ Unit] = 
+  read.asks { sc =>
+    CassandraConnector(sc.getConf).withSessionDo { implicit session =>
+      maybeFile(path).fold(deleteDir(path))(file => deleteFile(file))
+    }
+  }
 
-	def deleteFile(file: AFile)(implicit session: Session) = 
-		if(keyspaceExists(keyspace(fileParent(file))) && tableExists(keyspace(fileParent(file)), tableName(file))) {
-			val r = dropTable(keyspace(file), tableName(file))
-			().right[FileSystemError]
-		} else {
-			pathErr(pathNotFound(file)).left[Unit]
-		}
+  def deleteFile(file: AFile)(implicit session: Session) = 
+    if(keyspaceExists(keyspace(fileParent(file))) && tableExists(keyspace(fileParent(file)), tableName(file))) {
+      val r = dropTable(keyspace(file), tableName(file))
+      ().right[FileSystemError]
+    } else {
+      pathErr(pathNotFound(file)).left[Unit]
+    }
 
-	def deleteDir(dir: APath)(implicit session: Session) =  
-		if(keyspaceExists(keyspace(dir))) {
-			val r = dropKeyspace(keyspace(dir))
-			().right[FileSystemError]
-		} else {
-			pathErr(pathNotFound(dir)).left[Unit]
-		}
+  def deleteDir(dir: APath)(implicit session: Session) =  
+    if(keyspaceExists(keyspace(dir))) {
+      val r = dropKeyspace(keyspace(dir))
+      ().right[FileSystemError]
+    } else {
+      pathErr(pathNotFound(dir)).left[Unit]
+    }
 
-	def tempFile[S[_]](near: APath)(implicit
-		read: Read.Ops[SparkContext, S]
-		): Free[S, FileSystemError \/ AFile] = 
-  	read.asks { sc =>
-			CassandraConnector(sc.getConf).withSessionDo { implicit session =>
-				val randomFileName = s"quasar-${scala.util.Random.nextInt()}.tmp"
-				val aDir: ADir = refineType(near).fold(d => d, fileParent(_))
-				if (!keyspaceExists(keyspace(near))) {
-					val r = createTable(keyspace(near), randomFileName)
-					(aDir </> file(randomFileName)).right[FileSystemError]
-				} else {
-					pathErr(pathNotFound(near)).left[AFile]
-				}
-			}
-		}
+  def tempFile[S[_]](near: APath)(implicit
+    read: Read.Ops[SparkContext, S]
+    ): Free[S, FileSystemError \/ AFile] = 
+    read.asks { sc =>
+      CassandraConnector(sc.getConf).withSessionDo { implicit session =>
+        val randomFileName = s"quasar-${scala.util.Random.nextInt()}.tmp"
+        val aDir: ADir = refineType(near).fold(d => d, fileParent(_))
+        if (!keyspaceExists(keyspace(near))) {
+          val r = createTable(keyspace(near), randomFileName)
+          (aDir </> file(randomFileName)).right[FileSystemError]
+        } else {
+          pathErr(pathNotFound(near)).left[AFile]
+        }
+      }
+    }
 
-	private def keyspace(dir: APath) =
+  private def keyspace(dir: APath) =
     posixCodec.printPath(dir).substring(1).replace("/", "_")
 
   private def tableName(file: APath) =

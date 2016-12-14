@@ -20,6 +20,7 @@ import quasar.Predef._
 import quasar.effect._
 import quasar.contrib.pathy._
 import quasar.{Data, DataCodec}
+import quasar.physical.sparkcore.fs.queryfile.Input
 import quasar.fs._, 
   FileSystemError._, 
   PathError._
@@ -37,7 +38,7 @@ import pathy.Path._
 object queryfile {
 
   def fromFile(sc: SparkContext, file: AFile): Task[RDD[String]] =  Task.delay {
-  	sc.cassandraTable[String](keyspace(fileParent(file)), tableName(file))
+    sc.cassandraTable[String](keyspace(fileParent(file)), tableName(file))
       .select("data")
   }
 
@@ -84,7 +85,7 @@ object queryfile {
 
   def readChunkSize: Int = 5000
 
-  // def input: Input =
+  def input: Input = ???
     // Input(fromFile _, store _, fileExists _, listContents _, readChunkSize _)
 
   private def insertData(keyspace: String, table: String, data: String)(implicit session: Session) = {

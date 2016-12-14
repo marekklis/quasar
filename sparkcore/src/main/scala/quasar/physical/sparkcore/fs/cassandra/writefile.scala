@@ -21,6 +21,7 @@ import quasar.contrib.pathy._
 import quasar.{Data, DataCodec, DataEncodingError}
 import quasar.effect._
 import quasar.fs._, WriteFile._, FileSystemError._
+import quasar.fp.free._
 
 import org.apache.spark.SparkContext
 import com.datastax.driver.core.Session
@@ -28,7 +29,14 @@ import com.datastax.spark.connector.cql.CassandraConnector
 import pathy.Path.{ fileParent, posixCodec }
 import scalaz._, Scalaz._
 
+
 object writefile {
+
+  def chrooted[S[_]](prefix: ADir)(implicit
+    s0: MonotonicSeq :<: S,
+    s1: Read.Ops[SparkContext, S]
+  ) : WriteFile ~> Free[S, ?] =
+    flatMapSNT(interpret) compose chroot.writeFile[WriteFile](prefix)
 
   def interpret[S[_]](implicit 
     s0: MonotonicSeq :<: S,
