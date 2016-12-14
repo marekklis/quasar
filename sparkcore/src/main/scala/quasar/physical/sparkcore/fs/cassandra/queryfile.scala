@@ -85,7 +85,7 @@ object queryfile {
 
   def readChunkSize: Int = 5000
 
-  def input: Input = ???
+  def input[S[_]]: Input[S] = ???
     // Input(fromFile _, store _, fileExists _, listContents _, readChunkSize _)
 
   private def insertData(keyspace: String, table: String, data: String)(implicit session: Session) = {

@@ -44,17 +44,17 @@ object queryfile {
       : Injectable.Aux[SparkQScript, QScriptTotal[Fix, ?]] =
     ::\::[QScriptCore[Fix, ?]](::/::[Fix, EquiJoin[Fix, ?], Const[ShiftedRead, ?]])
 
-  final case class Input(
+  final case class Input[S[_]](
     fromFile: (SparkContext, AFile) => Task[RDD[String]],
     store: (RDD[Data], AFile) => Task[Unit],
-    fileExists: AFile => Task[Boolean],
+    fileExists: AFile => Free[S, Boolean],
     listContents: ADir => EitherT[Task, FileSystemError, Set[PathSegment]],
     readChunkSize: () => Int
   )
 
   type SparkContextRead[A] = Read[SparkContext, A]
 
-  def chrooted[S[_]](input: Input, fsType: FileSystemType, prefix: ADir)(implicit
+  def chrooted[S[_]](input: Input[S], fsType: FileSystemType, prefix: ADir)(implicit
     s0: Task :<: S,
     s1: SparkContextRead :<: S,
     s2: MonotonicSeq :<: S,
@@ -62,7 +62,7 @@ object queryfile {
   ): QueryFile ~> Free[S, ?] =
     flatMapSNT(interpreter(input, fsType)) compose chroot.queryFile[QueryFile](prefix)
 
-  def interpreter[S[_]](input: Input, fsType: FileSystemType)(implicit
+  def interpreter[S[_]](input: Input[S], fsType: FileSystemType)(implicit
     s0: Task :<: S,
     s1: SparkContextRead :<: S,
     s2: MonotonicSeq :<: S,
@@ -117,7 +117,7 @@ object queryfile {
 
   // TODO unify explainPlan, executePlan & evaluatePlan
   // This might be more complicated then it looks at first glance
-  private def explainPlan[S[_]](input: Input, fsType: FileSystemType, qs: Fix[SparkQScript], lp: Fix[LogicalPlan]) (implicit
+  private def explainPlan[S[_]](input: Input[S], fsType: FileSystemType, qs: Fix[SparkQScript], lp: Fix[LogicalPlan]) (implicit
     s0: Task :<: S,
     read: Read.Ops[SparkContext, S]
   ): Free[S, EitherT[Writer[PhaseResults, ?], FileSystemError, ExecutionPlan]] = {
@@ -136,7 +136,7 @@ object queryfile {
     }.join
   }
 
-  private def executePlan[S[_]](input: Input, qs: Fix[SparkQScript], out: AFile, lp: Fix[LogicalPlan]) (implicit
+  private def executePlan[S[_]](input: Input[S], qs: Fix[SparkQScript], out: AFile, lp: Fix[LogicalPlan]) (implicit
     s0: Task :<: S,
     read: Read.Ops[SparkContext, S]
   ): Free[S, EitherT[Writer[PhaseResults, ?], FileSystemError, AFile]] = {
@@ -158,7 +158,7 @@ object queryfile {
   // TODO for Q4.2016  - unify it with ReadFile
   final case class RddState(maybeRDD: Option[RDD[(Data, Long)]], pointer: Int)
 
-  private def evaluatePlan[S[_]](input: Input, qs: Fix[SparkQScript], lp: Fix[LogicalPlan])(implicit
+  private def evaluatePlan[S[_]](input: Input[S], qs: Fix[SparkQScript], lp: Fix[LogicalPlan])(implicit
       s0: Task :<: S,
       kvs: KeyValueStore.Ops[ResultHandle, RddState, S],
       read: Read.Ops[SparkContext, S],
@@ -209,11 +209,11 @@ object queryfile {
       kvs: KeyValueStore.Ops[ResultHandle, RddState, S]
      ): Free[S, Unit] = kvs.delete(h)
 
-  private def fileExists[S[_]](input: Input, f: AFile)(implicit
+  private def fileExists[S[_]](input: Input[S], f: AFile)(implicit
     s0: Task :<: S): Free[S, Boolean] =
-    injectFT[Task, S].apply (input.fileExists(f))
+    input.fileExists(f)
 
-  private def listContents[S[_]](input: Input, d: ADir)(implicit
+  private def listContents[S[_]](input: Input[S], d: ADir)(implicit
     s0: Task :<: S): Free[S, FileSystemError \/ Set[PathSegment]] =
     injectFT[Task, S].apply(input.listContents(d).run)
 }

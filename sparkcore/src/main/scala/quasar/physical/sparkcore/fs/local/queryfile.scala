@@ -23,6 +23,7 @@ import quasar.fs.FileSystemError
 import quasar.fs.PathError._
 import quasar.physical.sparkcore.fs.queryfile.Input
 import quasar.fs.FileSystemError._
+import quasar.fp.free._
 import quasar.contrib.pathy._
 
 import java.io.{File, PrintWriter, FileOutputStream}
@@ -49,9 +50,9 @@ object queryfile {
     pw.close()
   }
 
-  def fileExists(f: AFile): Task[Boolean] = Task.delay {
+  def fileExists[S[_]](f: AFile)(implicit s0: Task :<: S): Free[S, Boolean] = lift(Task.delay {
     Files.exists(Paths.get(posixCodec.unsafePrintPath(f)))
-  }
+  }).into[S]
 
   def listContents(d: ADir): EitherT[Task, FileSystemError, Set[PathSegment]] = EitherT(Task.delay {
     val directory = new File(posixCodec.unsafePrintPath(d))
@@ -71,5 +72,5 @@ object queryfile {
 
   def readChunkSize: Int = 5000
 
-  def input: Input = Input(fromFile _, store _, fileExists _, listContents _, readChunkSize _)
+  def input[S[_]](implicit s0: Task :<: S): Input[S] = Input(fromFile _, store _, fileExists[S] _, listContents _, readChunkSize _)
 }
