@@ -37,7 +37,7 @@ import pathy.Path._
 
 object queryfile {
 
-  def fromFile(sc: SparkContext, file: AFile): Task[RDD[String]] =  Task.delay {
+  def fromFile(sc: SparkContext, file: AFile): Task[RDD[String]] = Task.delay {
     sc.cassandraTable[String](keyspace(fileParent(file)), tableName(file))
       .select("data")
   }
@@ -85,8 +85,10 @@ object queryfile {
 
   def readChunkSize: Int = 5000
 
-  def input[S[_]]: Input[S] = ???
-    // Input(fromFile _, store _, fileExists _, listContents _, readChunkSize _)
+  def input[S[_]](implicit
+    read: Read.Ops[SparkContext, S]
+  ): Input[S] = 
+    Input(fromFile _, store[S] _, fileExists[S] _, listContents[S] _, readChunkSize _)
 
   private def insertData(keyspace: String, table: String, data: String)(implicit session: Session) = {
     val stmt = session.prepare(s"INSERT INTO $keyspace.$table (id, data) VALUES (now(),  ?);")
