@@ -22,7 +22,7 @@ import quasar.connector.EnvironmentError
 import quasar.effect._
 import quasar.fp.free._
 import quasar.fp.TaskRef
-import quasar.fs._, QueryFile.ResultHandle, ReadFile.ReadHandle//, WriteFile.WriteHandle
+import quasar.fs._, QueryFile.ResultHandle, ReadFile.ReadHandle
 import quasar.fs.mount._, FileSystemDef._
 import quasar.physical.sparkcore.fs.{queryfile => corequeryfile, readfile => corereadfile}
 
