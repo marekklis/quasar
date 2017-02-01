@@ -17,16 +17,22 @@
 package quasar.fs
 
 import quasar.Predef._
+import quasar.{BackendCapability, Data}
 import quasar.contrib.pathy._
 import quasar.fp._
+import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
+import quasar.std.StdLib
 
+import matryoshka.data.Fix
 import pathy.Path._
 import scalaz._, Scalaz._
+import scalaz.stream.Process
 
 class QueryFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) {
-  import FileSystemTest._, FileSystemError._, PathError._
+  import FileSystemTest._, FileSystemError._, PathError._, StdLib._
 
   val query  = QueryFile.Ops[FileSystem]
+  val read   = ReadFile.Ops[FileSystem]
   val write  = WriteFile.Ops[FileSystem]
   val manage = ManageFile.Ops[FileSystem]
 
@@ -35,9 +41,46 @@ class QueryFilesSpec extends FileSystemTest[FileSystem](FileSystemTest.allFsUT) 
   def deleteForQuery(run: Run): FsTask[Unit] =
     runT(run)(manage.delete(queryPrefix))
 
+  val lpr = new LogicalPlanR[Fix[LP]]
+
+  def readRenamed(src: AFile, from: String, to: String): Fix[LP] =
+    lpr.invoke1(
+      identity.Squash,
+      lpr.invoke2(
+        structural.MakeObject,
+        lpr.constant(Data._str(to)),
+        lpr.invoke2(
+          structural.ObjectProject,
+          lpr.read(src),
+          lpr.constant(Data._str(from)))))
+
   fileSystemShould { fs =>
     "Querying Files" should {
       step(deleteForQuery(fs.setupInterpM).runVoid)
+
+      "executing query to an existing file overwrites with results" >> ifSupports(fs,
+        BackendCapability.query(),
+        BackendCapability.write()) {
+
+        val d = queryPrefix </> dir("execappends")
+        val a = d </> file("afile")
+        val b = d </> file("bfile")
+        val c = d </> file("out")
+
+        val setup = write.saveThese(a, oneDoc) *> write.saveThese(b, anotherDoc).void
+
+        runT(fs.setupInterpM)(setup).runVoid
+
+        val aToc = readRenamed(a, "a", "c")
+        val bToc = readRenamed(b, "b", "c")
+
+        val e = EitherT((query.execute(aToc, c) *> query.execute(bToc, c).void).run.value)
+        val p = e.liftM[Process].drain ++ read.scanAll(c)
+
+        runLogT(fs.testInterpM, p).runEither must beRight(containTheSameElementsAs(Vector[Data](
+          Data.Obj("c" -> Data._int(2))
+        )))
+      }
 
       "listing directory returns immediate child nodes" >> {
         val d = queryPrefix </> dir("lschildren")

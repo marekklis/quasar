@@ -140,7 +140,6 @@ object data {
   )(implicit S0: Task :<: S): Free[S, QResponse[S]] = {
     type FreeS[A] = Free[S, A]
     type FreeFS[A] = FileSystemErrT[FreeS, A]
-    type QRespT[F[_], A] = EitherT[F, QResponse[S], A]
 
     def errorsResponse(
       decodeErrors: IndexedSeq[DecodeError],

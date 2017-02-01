@@ -34,11 +34,8 @@ package object mongodb {
 
   type WorkflowExecErrT[F[_], A] = EitherT[F, WorkflowExecutionError, A]
 
-  type JavaScriptPrg           = Vector[Js.Stmt]
-  type JavaScriptLogT[F[_], A] = WriterT[F, JavaScriptPrg, A]
-  type JavaScriptLog[A]        = Writer[JavaScriptPrg, A]
-
-  type MongoDbIOLog[A] = JavaScriptLogT[MongoDbIO, A]
+  type JavaScriptPrg    = Vector[Js.Stmt]
+  type JavaScriptLog[A] = Writer[JavaScriptPrg, A]
 
   // TODO: actually give these funcs their own type
   type JoinType = TernaryFunc

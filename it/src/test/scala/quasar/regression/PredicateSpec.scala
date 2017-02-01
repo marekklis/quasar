@@ -16,14 +16,15 @@
 
 package quasar.regression
 
-import scala.Predef.$conforms
 import quasar.Predef._
 
 import quasar.{Data, DataCodec}
 import quasar.DataArbitrary.dataArbitrary
 import quasar.fp._
 
-import argonaut._
+import scala.Predef.$conforms
+
+import argonaut._, Argonaut._
 import org.scalacheck.Prop
 import org.specs2.execute._
 import org.specs2.matcher._
@@ -36,7 +37,7 @@ class PredicateSpec extends quasar.Qspec {
   import Predicate._
 
   implicit val jsonArbitrary: Arbitrary[Json] = Arbitrary {
-    arbitrary[Data].map(DataCodec.Precise.encode(_).toOption.get)
+    arbitrary[Data].map(DataCodec.Precise.encode(_).getOrElse(jString("Undefined")))
   }
 
   // NB: for debugging, prints nicely and preserves field order

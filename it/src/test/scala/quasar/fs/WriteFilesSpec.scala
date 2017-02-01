@@ -17,7 +17,7 @@
 package quasar.fs
 
 import quasar.Predef._
-import quasar.TestConfig
+import quasar.BackendCapability
 import quasar.contrib.pathy._
 import quasar.fp._
 
@@ -27,7 +27,7 @@ import scalaz._, Scalaz._
 import scalaz.stream._
 
 class WriteFilesSpec extends FileSystemTest[FileSystem](
-  FileSystemTest.allFsUT.map(_.filterNot(fs => TestConfig.isMongoReadOnly(fs.name)))) {
+  FileSystemTest.allFsUT.map(_ filter (_.ref supports BackendCapability.write()))) {
 
   import FileSystemTest._, FileSystemError._
   import WriteFile._

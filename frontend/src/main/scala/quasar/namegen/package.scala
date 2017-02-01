@@ -34,7 +34,6 @@ package object namegen {
   } yield "__" + label + n.toString
 
   type NameT[M[_], A] = StateT[M, NameGen, A]
-  type NameDisj[E, A] = NameT[E \/ ?, A]
 
   class LiftHelper[F[_]] {
     def apply[A](v: F[A])(implicit F: Monad[F]) =

@@ -1,21 +1,20 @@
 {
-  "name": "select from a table named by a variable",
+    "name": "select from a table named by a variable",
 
-  "backends": {
-    "postgresql": "pending"
-  },
+    "backends": {
+        "mongodb_q_3_2": "pending",
+        "postgresql": "pending"
+    },
 
-  "data": "smallZips.data",
+    "data": "smallZips.data",
 
-  "variables": {
-    "table": "`smallZips`"
-  },
+    "variables": {
+        "table": "`smallZips`"
+    },
 
-  "query": "select count(*) as cnt from :table where pop < 1000",
+    "query": "select count(*) as cnt from :table where pop < 1000",
 
-  "predicate": "equalsExactly",
+    "predicate": "equalsExactly",
 
-  "expected": [
-    { "cnt": 19 }
-  ]
+    "expected": [{ "cnt": 19 }]
 }

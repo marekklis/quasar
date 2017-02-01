@@ -24,6 +24,7 @@ import quasar.fp.free._
 import quasar.fs._
 import quasar.fs.mount._
 import quasar.fs.mount.hierarchical._
+import quasar.physical._
 
 import scala.util.control.NonFatal
 
@@ -46,14 +47,14 @@ package object main {
 
   /** The physical filesystems currently supported. */
   val physicalFileSystems: FileSystemDef[PhysFsEffM] = IList(
-    quasar.physical.skeleton.fs.definition[PhysFsEff],
-    quasar.physical.mongodb.fs.mongoDbFileSystemDef[PhysFsEff],
-    quasar.physical.mongodb.fs.mongoDbQScriptFileSystemDef[PhysFsEff],
-    quasar.physical.postgresql.fs.definition[PhysFsEff],
-    quasar.physical.marklogic.fs.definition[PhysFsEff](readChunkSize = 10000L),
-    quasar.physical.sparkcore.fs.local.definition[PhysFsEff],
-    quasar.physical.sparkcore.fs.hdfs.definition[PhysFsEff],
-    quasar.physical.couchbase.fs.definition[PhysFsEff]
+    couchbase.fs.definition[PhysFsEff],
+    marklogic.fs.definition[PhysFsEff](readChunkSize = 10000L),
+    mongodb.fs.definition[PhysFsEff],
+    mongodb.fs.qscriptDefinition[PhysFsEff],
+    postgresql.fs.definition[PhysFsEff],
+    skeleton.fs.definition[PhysFsEff],
+    sparkcore.fs.hdfs.definition[PhysFsEff],
+    sparkcore.fs.local.definition[PhysFsEff]
   ).fold
 
   /** A "terminal" effect, encompassing failures and other effects which

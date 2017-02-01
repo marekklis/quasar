@@ -2,12 +2,16 @@
     "name": "distinct * (MongoDB)",
     "backends": {
         "mongodb_read_only": "pending",
+        "mongodb_q_3_2":  "skip",
         "postgresql":        "skip",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "marklogic_json":    "skip",
+        "marklogic_xml":     "skip",
+        "couchbase":         "skip",
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
     },
     "data": "../cities.data",
     "query": "select distinct * from `../cities` where city = \"BOSTON\"",
-    "predicate": "equalsExactly",
-    "expected": [{ "value": { "city": "BOSTON" } }]
+    "predicate": "containsExactly",
+    "expected": [{ "city": "BOSTON" }]
 }

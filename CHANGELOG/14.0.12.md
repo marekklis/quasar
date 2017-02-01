@@ -1,0 +1,1 @@
+- Couchbase: Skip filterOnFieldComparison.test

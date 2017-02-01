@@ -29,6 +29,10 @@ import scalaz.syntax.std.option._
 sealed abstract class XQuery {
   import XQuery._
 
+  def render: String
+
+  override def toString = render
+
   def apply(predicate: XQuery): XQuery =
     this match {
       case XQuery.Step(s) => XQuery.Step(s"$s[$predicate]")
@@ -101,11 +105,11 @@ sealed abstract class XQuery {
 
 object XQuery {
   final case class StringLit(str: String) extends XQuery {
-    override def toString = s""""$str""""
+    def render = s""""$str""""
   }
 
   /** XPath [Step](https://www.w3.org/TR/xquery/#id-steps) expression. */
-  final case class Step(override val toString: String) extends XQuery
+  final case class Step(val render: String) extends XQuery
 
   final case class Flwor(
     bindingClauses: NonEmptyList[BindingClause],
@@ -114,7 +118,7 @@ object XQuery {
     orderIsStable: Boolean,
     resultExpr: XQuery
   ) extends XQuery {
-    override def toString: String = {
+    def render: String = {
       val bindings =
         bindingClauses map (_.render) intercalate " "
 
@@ -135,7 +139,7 @@ object XQuery {
     }
   }
 
-  final case class Expression(override val toString: String) extends XQuery
+  final case class Expression(val render: String) extends XQuery
 
   def apply(expr: String): XQuery =
     Expression(expr)
@@ -151,6 +155,9 @@ object XQuery {
   val flwor = Prism.partial[XQuery, (NonEmptyList[BindingClause], Option[XQuery], IList[(XQuery, SortDirection)], Boolean, XQuery)] {
     case Flwor(bindings, filter, order, isStable, result) => (bindings, filter, order, isStable, result)
   } (Flwor.tupled)
+
+  implicit val equal: Equal[XQuery] =
+    Equal.equalBy(_.render)
 
   implicit val show: Show[XQuery] =
     Show.showFromToString

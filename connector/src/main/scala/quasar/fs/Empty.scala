@@ -22,7 +22,9 @@ import quasar.common.PhaseResults
 import quasar.contrib.pathy._
 import quasar.frontend.logicalplan.{LogicalPlan, LogicalPlanR}
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import pathy.Path._
 import scalaz.{~>, \/, Applicative}
 import scalaz.syntax.equal._
@@ -88,7 +90,7 @@ object Empty {
 
   ////
 
-  private val lp = new LogicalPlanR[Fix]
+  private val lp = new LogicalPlanR[Fix[LogicalPlan]]
 
   private def lpResult[F[_]: Applicative, A](plan: Fix[LogicalPlan]): F[(PhaseResults, FileSystemError \/ A)] =
     lp.paths(plan)

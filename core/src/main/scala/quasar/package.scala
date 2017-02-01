@@ -25,7 +25,9 @@ import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 import quasar.sql._
 import quasar.std.StdLib.set._
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import scalaz._, Leibniz._
 import scalaz.std.vector._
 import scalaz.syntax.either._
@@ -44,9 +46,10 @@ package object quasar {
     * typechecked.
     */
   // TODO: Move this into the SQL package, provide a type class for it in core.
-  def precompile(query: Fix[Sql], vars: Variables, basePath: ADir)(
-    implicit RT: RenderTree[Fix[Sql]]):
-      CompileM[Fix[LP]] = {
+  def precompile[T: Equal: RenderTree]
+    (query: Fix[Sql], vars: Variables, basePath: ADir)
+    (implicit TR: Recursive.Aux[T, LP], TC: Corecursive.Aux[T, LP])
+      : CompileM[T] = {
     import SemanticAnalysis.AllPhases
 
     for {
@@ -55,11 +58,11 @@ package object quasar {
                     Variables.substVars(ast, vars) leftMap (_.wrapNel))
       absAst   <- phase("Absolutized", substAst.mkPathsAbsolute(basePath).right)
       annTree  <- phase("Annotated Tree", AllPhases(absAst))
-      logical  <- phase("Logical Plan", Compiler.compile(annTree) leftMap (_.wrapNel))
+      logical  <- phase("Logical Plan", Compiler.compile[T](annTree) leftMap (_.wrapNel))
     } yield logical
   }
 
-  private val optimizer = new Optimizer[Fix]
+  private val optimizer = new Optimizer[Fix[LP]]
   private val lpr = optimizer.lpr
 
   /** Optimizes and typechecks a `LogicalPlan` returning the improved plan.
@@ -84,17 +87,17 @@ package object quasar {
   def queryPlan(
     query: Fix[Sql], vars: Variables, basePath: ADir, off: Natural, lim: Option[Positive]):
       CompileM[List[Data] \/ Fix[LP]] =
-    precompile(query, vars, basePath)
+    precompile[Fix[LP]](query, vars, basePath)
       .flatMap(lp => preparePlan(addOffsetLimit(lp, off, lim)))
       .map(refineConstantPlan)
 
-  def addOffsetLimit[T[_[_]]: Corecursive](
-    lp: T[LP], off: Natural, lim: Option[Positive]):
-      T[LP] = {
-    val skipped =
-      Drop(lp, constant[T[LP]](Data.Int(off.get)).embed).embed
+  def addOffsetLimit[T]
+    (lp: T, off: Natural, lim: Option[Positive])
+    (implicit T: Corecursive.Aux[T, LP])
+      : T = {
+    val skipped = Drop(lp, constant[T](Data.Int(off.get)).embed).embed
     lim.fold(
       skipped)(
-      l => Take(skipped, constant[T[LP]](Data.Int(l.get)).embed).embed)
+      l => Take(skipped, constant[T](Data.Int(l.get)).embed).embed)
   }
 }

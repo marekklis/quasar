@@ -22,17 +22,19 @@ import quasar.std._
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.fs.DataCursor
-import quasar.frontend.{logicalplan => lp}, lp.{LogicalPlan => LP}
+import quasar.frontend.{logicalplan => lp}, lp.{LogicalPlan => LP, LogicalPlanR}
 import quasar.physical.mongodb.fs._, bsoncursor._
 import quasar.physical.mongodb.workflow._
 import WorkflowExecutor.WorkflowCursor
 
-import matryoshka._, Recursive.ops._
-import java.time.format.DateTimeFormatter
+import scala.concurrent.duration._
+
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import org.specs2.execute._
 import org.specs2.matcher._
 import org.specs2.main.ArgProperty
-import scala.concurrent.duration._
 import scalaz._, Scalaz._
 import scalaz.concurrent.{Strategy, Task}
 import shapeless.{Nat}
@@ -41,32 +43,35 @@ import shapeless.{Nat}
   * evaluators.
   */
 abstract class MongoDbStdLibSpec extends StdLibSpec {
-  import quasar.frontend.fixpoint.lpf
+  val lpf = new LogicalPlanR[Fix[LP]]
 
   args.report(showtimes = ArgProperty(true))
 
   def shortCircuit[N <: Nat](backend: BackendName, func: GenericFunc[N], args: List[Data]): Result \/ Unit
 
+  def shortCircuitTC(args: List[Data]): Result \/ Unit
+
   def compile(queryModel: MongoQueryModel, coll: Collection, lp: Fix[LP])
       : PlannerError \/ (Crystallized[WorkflowF], BsonField.Name)
 
-  def is2_6(backend: BackendName): Boolean = backend == TestConfig.MONGO_2_6
-  def is3_2(backend: BackendName): Boolean = backend == TestConfig.MONGO_3_2
+  def is2_6(backend: BackendName): Boolean = backend === TestConfig.MONGO_2_6.name
+  def is3_2(backend: BackendName): Boolean = backend === TestConfig.MONGO_3_2.name
 
-  MongoDbSpec.clientShould { (backend, prefix, setupClient, testClient) =>
+  MongoDbSpec.clientShould(FsType) { (backend, prefix, setupClient, testClient) =>
     import MongoDbIO._
 
     /** Intercept and transform expected values into the form that's actually
       * produced by the MongoDB backend, in cases where MongoDB cannot represent
       * the type natively. */
     def massage(expected: Data): Data = expected match {
-      case Data.Time(time) => Data.Str(time.format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS")))
+      case Data.Time(time) => Data.Str(time.format(DataCodec.timeFormatter))
       case _               => expected
     }
 
     /** Identify constructs that are expected not to be implemented. */
     def shortCircuitLP(args: List[Data]): AlgebraM[Result \/ ?, LP, Unit] = {
-      case lp.Invoke(func, _) => shortCircuit(backend, func, args)
+      case lp.Invoke(func, _)     => shortCircuit(backend, func, args)
+      case lp.TemporalTrunc(_, _) => shortCircuitTC(args)
       case _ => ().right
     }
 
@@ -94,6 +99,7 @@ abstract class MongoDbStdLibSpec extends StdLibSpec {
         case _ => None
       },
       check)
+
     def beSingleResult(t: ValueCheck[Data]) = SingleResultCheckedMatcher(t)
 
     def run(args: List[Data], prg: List[Fix[LP]] => Fix[LP], expected: Data): Result =

@@ -26,9 +26,6 @@ import scalaz.stream._
 
 trait ProcessOps {
   implicit class PrOps[F[_], O](self: Process[F, O]) {
-    def cleanUpWith(t: F[Unit]): Process[F, O] =
-      self.onComplete(Process.eval(t).drain)
-
     final def evalScan1(f: (O, O) => F[O])(implicit monad: Monad[F]): Process[F, O] = {
       self.zipWithPrevious.evalMap {
         case (None, next) => monad.point(next)

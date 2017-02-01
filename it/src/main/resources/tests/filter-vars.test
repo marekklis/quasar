@@ -1,21 +1,20 @@
 {
-  "name": "filter with pipeline using variables in query",
+    "name": "filter with pipeline using variables in query",
 
-  "backends": {
-    "postgresql": "pending"
-  },
+    "backends": {
+        "mongodb_q_3_2": "pending",
+        "postgresql": "pending"
+    },
 
-  "data": "smallZips.data",
+    "data": "smallZips.data",
 
-  "variables": {
-    "cutoff": "1000"
-  },
+    "variables": {
+        "cutoff": "1000"
+    },
 
-  "query": "select count(*) as cnt from smallZips where pop < :cutoff",
+    "query": "select count(*) as cnt from smallZips where pop < :cutoff",
 
-  "predicate": "equalsExactly",
+    "predicate": "equalsExactly",
 
-  "expected": [
-    { "cnt": 19 }
-  ]
+    "expected": [{ "cnt": 19 }]
 }

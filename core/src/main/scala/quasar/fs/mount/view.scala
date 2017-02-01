@@ -28,12 +28,14 @@ import quasar.fs._, FileSystemError._, PathError._
 import quasar.frontend.{logicalplan => lp}, lp.{LogicalPlan => LP, Optimizer}
 import quasar.sql.Sql
 
-import matryoshka.{free => _, _}, TraverseT.ops._, Recursive.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import pathy.Path._
 import scalaz.{Failure => _, _}, Scalaz._
 
 object view {
-  private val optimizer = new Optimizer[Fix]
+  private val optimizer = new Optimizer[Fix[LP]]
   private val lpr = optimizer.lpr
 
   /** Translate reads on view paths to the equivalent queries. */
@@ -339,17 +341,17 @@ object view {
 
     def compiledView(loc: AFile): OptionT[Free[S, ?], SemanticErrors \/ Fix[LP]] =
       lookup(loc).map { case (expr, vars) =>
-         precompile(expr, vars, fileParent(loc)).run.value
+         precompile[Fix[LP]](expr, vars, fileParent(loc)).run.value
       }
 
     // NB: simplify incoming queries to the raw, idealized LP which is simpler
     //     to manage.
     val cleaned = plan.cata(optimizer.elideTypeCheckƒ)
 
-    (Set[FPath](), cleaned).anaM[Fix, SemanticErrsT[Free[S, ?], ?], LP] {
+    (Set[FPath](), cleaned).anaM[Fix[LP]] {
       case (e, i @ Embed(lp.Read(p))) if !(e contains p) =>
         refineTypeAbs(p).swap.map(f =>
-          EitherT(compiledView(f) getOrElse i.right).map(_.unFix.map((e + f, _)))
+          EitherT(compiledView(f) getOrElse i.right).map(_.project.map((e + f, _)))
         ).getOrElse(lift(e, i))
 
       case (e, i) => lift(e, i)

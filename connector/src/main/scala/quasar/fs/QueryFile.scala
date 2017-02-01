@@ -17,11 +17,11 @@
 package quasar.fs
 
 import quasar.Predef._
-import quasar._, Planner._, RenderTree.ops._
+import quasar._, Planner._, RenderTree.ops._, RenderTreeT.ops._
 import quasar.common.{PhaseResult, PhaseResults, PhaseResultT, PhaseResultW}
 import quasar.connector.CompileM
-import quasar.contrib.matryoshka._
 import quasar.contrib.pathy._
+import quasar.contrib.scalaz._
 import quasar.effect.LiftedOps
 import quasar.fp._
 import quasar.fp.ski._
@@ -30,7 +30,9 @@ import quasar.frontend.SemanticErrsT
 import quasar.frontend.logicalplan.{LogicalPlan, Optimizer}
 import quasar.qscript._
 
-import matryoshka._, Recursive.ops._, TraverseT.ops._
+import matryoshka.{Transform => _, _}
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import pathy.Path._
 import scalaz._, Scalaz.{ToIdOps => _, _}
 import scalaz.iteratee._
@@ -48,7 +50,7 @@ object QueryFile {
   }
 
   def convertAndNormalize
-    [T[_[_]]: Recursive: Corecursive: EqualT: ShowT, QS[_]: Traverse: Normalizable]
+    [T[_[_]]: BirecursiveT: EqualT: ShowT, QS[_]: Traverse: Normalizable]
     (lp: T[LogicalPlan])
     (eval: QS[T[QS]] => QS[T[QS]])
     (implicit
@@ -59,39 +61,42 @@ object QueryFile {
       PB:  ProjectBucket[T, ?] :<: QS,
       FI: Injectable.Aux[QS, QScriptTotal[T, ?]],
       mergeable: Mergeable.Aux[T, QS],
-      eq:            Delay[Equal, QS],
-      show:           Delay[Show, QS])
+      render: Delay[RenderTree, QS],
+      eq: Delay[Equal, QS],
+      show: Delay[Show, QS])
       : PlannerError \/ T[QS] = {
     val transform = new Transform[T, QS]
-    val optimizer = new Optimizer[T]
+    val optimizer = new Optimizer[T[LogicalPlan]]
 
     // TODO: Instead of eliding Lets, use a `Binder` fold, or ABTs or something
     //       so we don’t duplicate work.
-    lp.transCata[LogicalPlan](orOriginal(optimizer.elideLets))
-      .cataM[PlannerError \/ ?, Target[T, QS]](newLP => transform.lpToQScript(newLP.map(Target.value.modify(_.transAna(eval)))))
-      .map(target => QC.inj((transform.reifyResult(target.ann, target.value))).embed.transCata(eval))
+    lp.transCata[T[LogicalPlan]](orOriginal(optimizer.elideLets))
+      .cataM[PlannerError \/ ?, Target[T, QS]](newLP => transform.lpToQScript(newLP.map(Target.value.modify(_.transAna[T[QS]](eval)))))
+      .map(target => QC.inj((transform.reifyResult(target.ann, target.value))).embed.transCata[T[QS]](eval))
   }
 
   def simplifyAndNormalize
-    [T[_[_]]: Recursive: Corecursive: EqualT: ShowT,
+    [T[_[_]]: BirecursiveT: EqualT: ShowT,
       IQS[_]: Functor,
       QS[_]: Traverse: Normalizable]
     (implicit
-      CI:  Coalesce.Aux[T, IQS, IQS],
+      CI: Coalesce.Aux[T, IQS, IQS],
+      CQ: Coalesce.Aux[T, QS, QS],
       SP: SimplifyProjection.Aux[IQS, QS],
-      CQ:  Coalesce.Aux[T, QS, QS],
-      QC:  QScriptCore[T, ?] :<: QS,
-      TJ:    ThetaJoin[T, ?] :<: QS,
+      PA: PruneArrays[QS],
+      QC: QScriptCore[T, ?] :<: QS,
+      TJ:   ThetaJoin[T, ?] :<: QS,
       FI: Injectable.Aux[QS, QScriptTotal[T, ?]])
       : T[IQS] => T[QS] = {
     val rewrite = new Rewrite[T]
 
     // TODO: This would be `transHylo` if there were such a thing.
-    _.transAna(SP.simplifyProjection)
+    _.transAna[T[QS]](SP.simplifyProjection)
       // TODO: Rather than explicitly applying multiple times, we should apply
       //       repeatedly until unchanged.
-      .transAna(rewrite.normalize)
-      .transAna(rewrite.normalize)
+      .transAna[T[QS]](rewrite.normalize)
+      .transAna[T[QS]](rewrite.normalize)
+      .pruneArrays
   }
 
   /** The shape of QScript that’s used during conversion from LP. */
@@ -109,22 +114,24 @@ object QueryFile {
     * LogicalPlan no longer needs to be exposed.
     */
   def convertToQScript
-    [T[_[_]]: Recursive: Corecursive: EqualT: ShowT, QS[_]: Traverse: Normalizable]
+    [T[_[_]]: BirecursiveT: EqualT: RenderTreeT: ShowT, QS[_]: Traverse: Normalizable]
     (lp: T[LogicalPlan])
     (implicit
-      CQ:  Coalesce.Aux[T, QS, QS],
+      CQ: Coalesce.Aux[T, QS, QS],
+      PA: PruneArrays[QS],
       DE:  Const[DeadEnd, ?] :<: QS,
       QC:  QScriptCore[T, ?] :<: QS,
       TJ:    ThetaJoin[T, ?] :<: QS,
       FI: Injectable.Aux[QS, QScriptTotal[T, ?]],
-      show:         Delay[Show, QS],
-      RT:     Delay[RenderTree, QS])
+      show: Delay[Show, QS],
+      renderI: Delay[RenderTree, QScriptInternal[T, ?]],
+      render: Delay[RenderTree, QS])
       : EitherT[Writer[PhaseResults, ?], FileSystemError, T[QS]] = {
     val transform = new Transform[T, QScriptInternal[T, ?]]
     val rewrite = new Rewrite[T]
 
     val qs =
-      convertAndNormalize[T, QScriptInternal[T, ?]](lp)(rewrite.normalize).leftMap(FileSystemError.planningFailed(lp.convertTo[Fix], _)) ∘
+      convertAndNormalize[T, QScriptInternal[T, ?]](lp)(rewrite.normalize).leftMap(FileSystemError.planningFailed(lp.convertTo[Fix[LogicalPlan]], _)) ∘
         simplifyAndNormalize[T, QScriptInternal[T, ?], QS]
 
     EitherT(Writer(
@@ -133,49 +140,47 @@ object QueryFile {
   }
 
   def convertToQScriptRead
-    [T[_[_]]: Recursive: Corecursive: EqualT: ShowT, M[_], QS[_]: Traverse: Normalizable]
+    [T[_[_]]: BirecursiveT: EqualT: RenderTreeT: ShowT, M[_]: Monad, QS[_]: Traverse: Normalizable]
     (listContents: DiscoverPath.ListContents[M])
     (lp: T[LogicalPlan])
     (implicit
-      merr: MonadError[M, FileSystemError],
-      mtell: MonadTell[M, PhaseResults],
-      CQ:  Coalesce.Aux[T, QS, QS],
-      R:        Const[Read, ?] :<: QS,
+      merr: MonadError_[M, FileSystemError],
+      mtell: MonadTell_[M, PhaseResults],
+      R: Const[Read[APath], ?] :<: QS,
       QC:    QScriptCore[T, ?] :<: QS,
       TJ:      ThetaJoin[T, ?] :<: QS,
+      CQ: Coalesce.Aux[T, QS, QS],
+      PA: PruneArrays[QS],
       FI: Injectable.Aux[QS, QScriptTotal[T, ?]],
-      show:           Delay[Show, QS],
-      RT:       Delay[RenderTree, QS])
+      show: Delay[Show, QS],
+      renderI: Delay[RenderTree, QScriptInternal[T, ?]],
+      render: Delay[RenderTree, QS])
       : M[T[QS]] = {
     val transform = new Transform[T, QScriptInternal[T, ?]]
     val rewrite = new Rewrite[T]
 
     type InterimQS[A] =
-      (QScriptCore[T, ?] :\: ProjectBucket[T, ?] :\: ThetaJoin[T, ?] :/: Const[Read, ?])#M[A]
+      (QScriptCore[T, ?] :\: ProjectBucket[T, ?] :\: ThetaJoin[T, ?] :/: Const[Read[APath], ?])#M[A]
 
     implicit val interimQsToQscriptTotal
         : Injectable.Aux[InterimQS, QScriptTotal[T, ?]] =
       Injectable.coproduct(Injectable.inject[QScriptCore[T, ?], QScriptTotal[T, ?]],
         Injectable.coproduct(Injectable.inject[ProjectBucket[T, ?], QScriptTotal[T, ?]],
           Injectable.coproduct(Injectable.inject[ThetaJoin[T, ?], QScriptTotal[T, ?]],
-            Injectable.inject[Const[Read, ?], QScriptTotal[T, ?]])))
+            Injectable.inject[Const[Read[APath], ?], QScriptTotal[T, ?]])))
 
-    val qs =
-      merr.map(
-        merr.bind(
-          convertAndNormalize[T, QScriptInternal[T, ?]](lp)(rewrite.normalize).fold(
-            perr => merr.raiseError(FileSystemError.planningFailed(lp.convertTo[Fix], perr)),
-            merr.point(_)))(
-          rewrite.pathify[M, QScriptInternal[T, ?], InterimQS](listContents)))(
-        simplifyAndNormalize[T, InterimQS, QS])
-
-    merr.bind(qs) { qs =>
-      mtell.writer(Vector(PhaseResult.tree("QScript", qs)), qs)
-    }
+    convertAndNormalize[T, QScriptInternal[T, ?]](lp)(rewrite.normalize)
+      .fold(
+        perr => merr.raiseError(FileSystemError.planningFailed(lp.convertTo[Fix[LogicalPlan]], perr)),
+        _.point[M])
+      .flatMap(rewrite.pathify[M, QScriptInternal[T, ?], InterimQS](listContents))
+      .map(simplifyAndNormalize[T, InterimQS, QS])
+      .flatMap(qs => mtell.writer(Vector(PhaseResult.tree("QScript", qs)), qs))
   }
 
-  /** The result of the query is stored in an output file
-    * instead of being returned to the user immediately.
+  /** The result of the query is stored in an output file, overwriting any existing
+    * contents, instead of being returned to the user immediately.
+    *
     * The `LogicalPlan` is expected to only contain absolute paths even though
     * that is unfortunately not expressed in the types currently.
     */
@@ -244,6 +249,9 @@ object QueryFile {
 
     /** Returns the path to the result of executing the given `LogicalPlan`,
       * using the provided path if possible.
+      *
+      * If the given file path exists, it will be overwritten with the results
+      * from the query.
       *
       * Execution of certain plans may return a result file other than the
       * requested file if it is more efficient to do so (i.e. to avoid copying

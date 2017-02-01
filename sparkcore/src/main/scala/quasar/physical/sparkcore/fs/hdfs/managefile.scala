@@ -86,7 +86,7 @@ object managefile {
       dstParent <- toPath(fileParent(dst))
     } yield {
       val deleted = hdfs.delete(dstPath, true)
-      val parentsCreated = hdfs.mkdirs(dstParent)
+      val _ = hdfs.mkdirs(dstParent)
       val result = hdfs.rename(srcPath, dstPath)
       hdfs.close()
       result
@@ -144,7 +144,7 @@ object managefile {
 
     Failure.Ops[PhysicalError, S].unattempt(lift(deleteHandled).into[S])
   }
-  
+
   private def tempFile[S[_]](near: APath)(implicit
     s0: Task :<: S
   ): Free[S, FileSystemError \/ AFile] = lift(Task.delay {

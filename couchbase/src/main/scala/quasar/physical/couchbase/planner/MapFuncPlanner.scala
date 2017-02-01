@@ -17,475 +17,585 @@
 package quasar.physical.couchbase.planner
 
 import quasar.Predef._
-import quasar.DataCodec, DataCodec.Precise.{DateKey, TimeKey, TimestampKey}
-import quasar.{NameGenerator, Type}
-import quasar.Planner.{NonRepresentableEJson, PlannerError}
-import quasar.common.PhaseResult.detail
-import quasar.contrib.matryoshka._
+import quasar.DataCodec, DataCodec.Precise.{DateKey, IntervalKey, TimeKey, TimestampKey}
+import quasar.{Data => QData, Type => QType, NameGenerator}
 import quasar.fp._, eitherT._
-import quasar.fp.ski.κ
-import quasar.physical.couchbase._, N1QL._, Select._
-import quasar.physical.couchbase.common.CBDataCodec
-import quasar.qscript, qscript.{Map => _, _}
-import quasar.std.StdLib.string._
+import quasar.physical.couchbase._, N1QL.{Eq, Split, _}, Case._, Select.{Value, _}
+import quasar.qscript, qscript.{MapFunc, MapFuncs => MF}
+import quasar.std.StdLib.string.{dateRegex, timeRegex, timestampRegex}
+import quasar.std.DateLib.TemporalPart, TemporalPart._
 
-import matryoshka._, Recursive.ops._
-import scalaz._, Scalaz.{ToIdOps => _, _}
+import matryoshka._
+import matryoshka.implicits._
+import scalaz._, Scalaz._
 
-final class MapFuncPlanner[F[_]: Monad: NameGenerator, T[_[_]]: Recursive: ShowT]
-  extends Planner[F, MapFunc[T, ?]] {
-  import MapFuncs._
+final class MapFuncPlanner[T[_[_]]: BirecursiveT: ShowT, F[_]: Monad: NameGenerator]
+  extends Planner[T, F, MapFunc[T, ?]] {
 
-  implicit val codec = CBDataCodec
+  def str(s: String): T[N1QL]   = Data[T[N1QL]](QData.Str(s)).embed
+  def int(i: Int): T[N1QL]      = Data[T[N1QL]](QData.Int(i)).embed
+  def bool(b: Boolean): T[N1QL] = Data[T[N1QL]](QData.Bool(b)).embed
+  val undefined: T[N1QL]        = Null[T[N1QL]]().embed
 
-  // TODO: Move datetime handling out of generated N1QL once enriched N1QL representation is available
+  val emptyStr       = str("")
+  val nullStr        = str("null")
+  val dateTimeDelim  = str("T")
+  val zeroUTC        = str("Z")
+  val dateFillPrefix = str("0000-01-01T")
+  val zeroTime       = str("00:00:00.000")
+  val zeroTimeSuffix = str("T00:00:00.000Z")
+  val microsecond    = str("microsecond")
+  val millisecond    = str("millisecond")
+  val second         = str("second")
+  val minute         = str("minute")
+  val hour           = str("hour")
+  val day            = str("day")
+  val week           = str("week")
+  val month          = str("month")
+  val quarter        = str("quarter")
+  val year           = str("year")
+  val decade         = str("decade")
+  val century        = str("century")
+  val millennium     = str("millennium")
+  val dayOfWeek      = str("day_of_week")
+  val dayOfYear      = str("day_of_year")
+  val isoDow         = str("iso_dow")
+  val isoWeek        = str("iso_week")
+  val isoYear        = str("iso_year")
+  val timezone       = str("timezone")
+  val timezoneHour   = str("timezone_hour")
+  val timezoneMinute = str("timezone_minute")
 
-  def unwrap(expr: N1QL): N1QL = {
-    val exprN1ql = n1ql(expr)
-    partialQueryString(
-      s"""ifmissing($exprN1ql.["$DateKey"], $exprN1ql.["$TimeKey"], $exprN1ql.["$TimestampKey"], $exprN1ql)"""
-    )
+  def unwrap(a1: T[N1QL]): T[N1QL] =
+    IfMissing(
+      SelectField(a1, str(DateKey)).embed,
+      SelectField(a1, str(TimeKey)).embed,
+      SelectField(a1, str(TimestampKey)).embed,
+      SelectField(a1, str(IntervalKey)).embed,
+      a1).embed
+
+  def extract(a1: T[N1QL], part: T[N1QL]): T[N1QL] =
+    DatePartStr(unwrap(a1), part).embed
+
+  def temporalPart(part: TemporalPart): T[N1QL] = {
+    import TemporalPart._
+
+    part match {
+      case Century     => century
+      case Day         => day
+      case Decade      => decade
+      case Hour        => hour
+      case Microsecond => microsecond
+      case Millennium  => millennium
+      case Millisecond => millisecond
+      case Minute      => minute
+      case Month       => month
+      case Quarter     => quarter
+      case Second      => second
+      case Week        => week
+      case Year        => year
+    }
   }
 
-  def extract(expr: N1QL, part: String): M[N1QL] =
-    partialQueryString(
-      s"""date_part_str(${n1ql(unwrap(expr))}, "$part")"""
-    ).point[M]
-
-  def datetime(expr: N1QL, key: String, regex: String): M[N1QL] = {
-    val exprN1ql = n1ql(expr)
-    partialQueryString(s"""
-      (case
-       when $exprN1ql.["$key"] is not null then $exprN1ql
-       when regexp_contains($exprN1ql, "$regex") then { "$key": $exprN1ql }
-       else null
-       end)"""
-    ).point[M]
+  def trunc(part: TemporalPart, dt: T[N1QL]) = part match {
+    case Week =>
+      DateTruncStr(
+        DateAddStr(
+          dt,
+          Neg(
+            Case(
+              WhenThen(Eq(DatePartStr(dt, isoDow).embed, int(0)).embed, int(0))
+            )(
+              Else(Sub(DatePartStr(dt, isoDow).embed, int(1)).embed)
+            ).embed).embed,
+          day).embed,
+        day).embed
+    case _ =>
+      DateTruncStr(dt, temporalPart(part)).embed
   }
 
-  def rel(a1: N1QL, a2: N1QL, op: String): M[N1QL] = {
-    val a1N1ql = n1ql(a1)
-    val a2N1ql = n1ql(a2)
-    val a1Unwrapped = n1ql(unwrap(a1))
-    val a2Unwrapped = n1ql(unwrap(a2))
+  def temporalTrunc(part: TemporalPart, a: T[N1QL]): T[N1QL] =
+    Case(
+      WhenThen(
+        SelectField(a, str(DateKey)).embed,
+        Date(SelectElem(
+          Split(
+            trunc(part, ConcatStr(SelectField(a, str(DateKey)).embed, zeroTimeSuffix).embed), dateTimeDelim).embed,
+          int(0)).embed).embed),
+      WhenThen(
+        SelectField(a, str(TimeKey)).embed,
+        Time((part === Week).fold(
+          zeroTime,
+          SelectElem(
+            Split(
+              SelectElem(
+                Split(
+                  trunc(part, ConcatStr(
+                    ConcatStr(dateFillPrefix, SelectField(a, str(TimeKey)).embed).embed,
+                    zeroUTC).embed),
+                  dateTimeDelim).embed,
+                int(1)).embed,
+              zeroUTC).embed,
+            int(0)).embed)).embed),
+      WhenThen(
+        SelectField(a, str(TimestampKey)).embed,
+        Timestamp(trunc(part, SelectField(a, str(TimestampKey)).embed)).embed)
+    )(
+      Else(DateTruncStr(a, temporalPart(part)).embed)
+    ).embed
 
-    // TODO: De-stringly
-    val q = (op, a2N1ql) match {
-      case ("=",  "null") => s"$a1Unwrapped is null"
-      case ("!=", "null") => s"$a1Unwrapped is not null"
-      case _              =>
-        s"""
-          (case
-           when ifmissing($a1N1ql.["$DateKey"], $a2N1ql.["$DateKey"]) is not null
-             then date_diff_str($a1Unwrapped, $a2Unwrapped, "day") $op 0
-           when ifmissing($a1N1ql.["$TimeKey"], $a1N1ql.["$TimestampKey"], $a2N1ql.["$TimeKey"], $a2N1ql.["$TimestampKey"]) is not null
-             then date_diff_str($a1Unwrapped, $a2Unwrapped, "millisecond") $op 0
-           else $a1Unwrapped $op $a2Unwrapped
-           end)"""
+  def fracZero(a1: T[N1QL]): T[N1QL] =
+    Case(
+      WhenThen(RegexContains(a1, str("[.]")).embed, a1)
+    )(
+      Else(ConcatStr(a1, str(".000")).embed)
+    ).embed
+
+  def rel(op: N1QL[T[N1QL]]): T[N1QL] = {
+    def handleDates(a1: T[N1QL], a2: T[N1QL], o: (T[N1QL], T[N1QL]) => N1QL[T[N1QL]]): T[N1QL] = {
+      val a1Date = SelectField(a1, str(DateKey)).embed
+      val a2Date = SelectField(a2, str(DateKey)).embed
+      val a1U = unwrap(a1)
+      val a2U = unwrap(a2)
+      IfMissingOrNull(
+        o(DateDiffStr(a1Date, a2Date, day).embed, int(0)).embed,
+        o(DateDiffStr(a1U, a2U, millisecond).embed, int(0)).embed,
+        o(a1, a2).embed
+      ).embed
     }
 
-    partialQueryString(q).point[M]
+    op match {
+      case Eq(a1, a2)  => handleDates(a1, a2, Eq(_, _))
+      case Neq(a1, a2) => handleDates(a1, a2, Neq(_, _))
+      case Lt(a1, a2)  => handleDates(a1, a2, Lt(_, _))
+      case Lte(a1, a2) => handleDates(a1, a2, Lte(_, _))
+      case Gt(a1, a2)  => handleDates(a1, a2, Gt(_, _))
+      case Gte(a1, a2) => handleDates(a1, a2, Gte(_, _))
+      case v           => v.embed
+    }
   }
 
-  def proj(a1: N1QL, a2: N1QL): N1QL =
-    partialQueryString(s"""${n1ql(a1)}.[${n1ql(a2)}]""")
+  def datetime(a1: T[N1QL], key: String, regex: Regex): T[N1QL] =
+    Case(
+      WhenThen(
+        IsNotNull(SelectField(a1, str(key)).embed).embed,
+        a1),
+      WhenThen(
+        RegexContains(a1, str(regex.regex)).embed,
+        Obj(Map(str(key) -> a1)).embed)
+    )(
+      Else(Null[T[N1QL]].embed)
+    ).embed
 
-  def plan: AlgebraM[M, MapFunc[T, ?], N1QL] = {
+  def plan: AlgebraM[M, MapFunc[T, ?], T[N1QL]] = {
     // nullary
-    case Constant(v) =>
-      EitherT(v.cataM(quasar.Data.fromEJson) >>= (d =>
-        DataCodec.render(d).bimap(
-          κ(NonRepresentableEJson(v.shows): PlannerError),
-          partialQueryString(_)
-        ).point[PR]
-      ))
-    case Undefined() =>
-      partialQueryString("null").point[M]
+    case MF.Constant(v) =>
+      Data[T[N1QL]](v.cata(QData.fromEJson)).embed.η[M]
+    case MF.Undefined() =>
+      undefined.η[M]
 
     // array
-    case Length(a1) =>
-      val a1N1ql = n1ql(a1)
-      partialQueryString(s"ifmissingornull(length($a1N1ql), array_length($a1N1ql), object_length($a1N1ql), $naStr)").point[M]
+    case MF.Length(a1) =>
+      IfMissingOrNull(
+        Length(a1).embed,
+        LengthArr(a1).embed,
+        LengthObj(a1).embed,
+        undefined
+      ).embed.η[M]
 
     // date
-    case Date(a1) =>
-      datetime(a1, DateKey, dateRegex)
-    case Time(a1) =>
-      datetime(a1, TimeKey, timeRegex)
-    case Timestamp(a1) =>
-      datetime(a1, TimestampKey, timestampRegex)
-    case Interval(a1)              =>
-      unimplementedP("Interval")
-    case TimeOfDay(a1)             =>
-      val a1N1ql = n1ql(a1)
-      def fracZero(expr: String) = s"""
-        (case
-         when regex_contains($expr, "[.]") then { "$TimeKey": $expr }
-         when $expr is not null then { "$TimeKey": $expr || ".000" }
-         else $naStr
-         end)"""
-      partialQueryString(s"""
-        (case
-         when $a1N1ql.["$DateKey"] then $naStr
-         when $a1N1ql.["$TimeKey"] then $a1N1ql
-         when $a1N1ql.["$TimestampKey"] then { "$TimeKey": split(split($a1N1ql.["$TimestampKey"], "T")[1], "Z")[0] }
-         else ${fracZero(s"""millis_to_utc(millis($a1N1ql), "00:00:00.000")""")}
-         end)"""
-      ).point[M]
-    case ToTimestamp(a1)           =>
-      partialQueryString(
-        s"""{ "$TimestampKey": millis_to_utc(${n1ql(a1)}) }"""
-      ).point[M]
-    case ExtractCentury(a1)        =>
-      extract(a1, "year") ∘ (y => partialQueryString(s"ceil(${n1ql(y)} / 100)"))
-    case ExtractDayOfMonth(a1)     =>
-      extract(a1, "day")
-    case ExtractDecade(a1)         =>
-      extract(a1, "decade")
-    case ExtractDayOfWeek(a1)      =>
-      extract(a1, "day_of_week")
-    case ExtractDayOfYear(a1)      =>
-      extract(a1, "day_of_year")
-    case ExtractEpoch(a1)          =>
-      val a1N1ql = n1ql(a1)
-      partialQueryString(s"""
-        millis(
-          case
-          when $a1N1ql.["$DateKey"] then $a1N1ql.["$DateKey"] || "T00:00:00.000Z"
-          when $a1N1ql.["$TimeKey"] then $naStr
-          else ifmissing($a1N1ql.["$TimestampKey"], $a1N1ql)
-          end
-        ) / 1000"""
-      ).point[M]
-    case ExtractHour(a1)           =>
-      extract(a1, "hour")
-    case ExtractIsoDayOfWeek(a1)   =>
-      extract(a1, "iso_dow")
-    case ExtractIsoYear(a1)        =>
-      extract(a1, "iso_year")
-    case ExtractMicroseconds(a1)   =>
-      (
-        extract(a1, "second")      ⊛
-        extract(a1, "millisecond")
-      )((seconds, millis) =>
-        partialQueryString(s"((${n1ql(seconds)} * 1000) + ${n1ql(millis)}) * 1000")
-      )
-    case ExtractMillennium(a1)     =>
-      extract(a1, "year") ∘ (y => partialQueryString(s"ceil(${n1ql(y)} / 1000)"))
-    case ExtractMilliseconds(a1)   =>
-    (
-      extract(a1, "second")      ⊛
-      extract(a1, "millisecond")
-    )((seconds, millis) =>
-      partialQueryString(s"(${n1ql(seconds)} * 1000) + ${n1ql(millis)}")
-    )
-    case ExtractMinute(a1)         =>
-      extract(a1, "minute")
-    case ExtractMonth(a1)          =>
-      extract(a1, "month")
-    case ExtractQuarter(a1)        =>
-      extract(a1, "quarter")
-    case ExtractSecond(a1)         =>
-      (
-        extract(a1, "second")      ⊛
-        extract(a1, "millisecond")
-      )((seconds, millis) =>
-        partialQueryString(s"${n1ql(seconds)} + (${n1ql(millis)} / 1000)")
-      )
-    case ExtractTimezone(a1)       =>
-      extract(a1, "timezone")
-    case ExtractTimezoneHour(a1)   =>
-      extract(a1, "timezone_hour")
-    case ExtractTimezoneMinute(a1) =>
-      extract(a1, "timezone_minute")
-    case ExtractWeek(a1)           =>
-      extract(a1, "iso_week")
-    case ExtractYear(a1)           =>
-      extract(a1, "year")
-    case Now() =>
-      partialQueryString("now_str()").point[M]
+    case MF.Date(a1) =>
+      datetime(a1, DateKey, dateRegex.r).η[M]
+    case MF.Time(a1) =>
+      datetime(a1, TimeKey, timeRegex.r).η[M]
+    case MF.Timestamp(a1) =>
+      datetime(a1, TimestampKey, timestampRegex.r).η[M]
+    case MF.Interval(a1) =>
+      Case(
+        WhenThen(IsNotNull(SelectField(a1, str(IntervalKey)).embed).embed, a1)
+      )(
+        Else(Null[T[N1QL]].embed)
+      ).embed.η[M]
+    case MF.TimeOfDay(a1) =>
+      def fracZeroTime(a1: T[N1QL]): T[N1QL] = {
+        val fz = fracZero(a1)
+        Case(
+          WhenThen(IsNotNull(fz).embed, Time(fz).embed)
+        )(
+          Else(undefined)
+        ).embed
+      }
+
+      def timeFromTS(a1: T[N1QL]): T[N1QL] =
+        Time(SelectElem(
+          Split(
+            SelectElem(
+              Split(SelectField(a1, str(TimestampKey)).embed,  dateTimeDelim).embed,
+              int(1)).embed,
+            zeroUTC).embed,
+          int(0)).embed).embed
+
+      Case(
+        WhenThen(SelectField(a1, str(DateKey)).embed, undefined),
+        WhenThen(SelectField(a1, str(TimeKey)).embed, a1),
+        WhenThen(SelectField(a1, str(TimestampKey)).embed, timeFromTS(a1))
+      )(
+        Else(fracZeroTime(MillisToUTC(Millis(a1).embed, zeroTime.some).embed))
+      ).embed.η[M]
+    case MF.ToTimestamp(a1) =>
+      Timestamp(MillisToUTC(a1, none).embed).embed.η[M]
+    case MF.TypeOf(a1) =>
+      unimplementedP("TypeOf")
+    case MF.ExtractCentury(a1) =>
+      Ceil(Div(extract(a1, year), int(100)).embed).embed.η[M]
+    case MF.ExtractDayOfMonth(a1) =>
+      extract(a1, day).η[M]
+    case MF.ExtractDecade(a1)         =>
+      extract(a1, decade).η[M]
+    case MF.ExtractDayOfWeek(a1)      =>
+      extract(a1, dayOfWeek).η[M]
+    case MF.ExtractDayOfYear(a1)      =>
+      extract(a1, dayOfYear).η[M]
+    case MF.ExtractEpoch(a1) =>
+      Div(
+        Millis(
+          Case(
+            WhenThen(
+              SelectField(a1, str(DateKey)).embed,
+              ConcatStr(
+                SelectField(a1, str(DateKey)).embed,
+                zeroTimeSuffix).embed),
+            WhenThen(
+              SelectField(a1, str(TimeKey)).embed,
+              undefined)
+          )(
+            Else(IfMissing(
+              SelectField(a1, str(TimestampKey)).embed,
+              a1).embed)
+          ).embed
+        ).embed,
+        int(1000)
+      ).embed.η[M]
+    case MF.ExtractHour(a1) =>
+      extract(a1, hour).η[M]
+    case MF.ExtractIsoDayOfWeek(a1) =>
+      extract(a1, isoDow).η[M]
+    case MF.ExtractIsoYear(a1)        =>
+      extract(a1, isoYear).η[M]
+    case MF.ExtractMicroseconds(a1) =>
+      Mult(
+        Add(
+          Mult(extract(a1, second), int(1000)).embed,
+          extract(a1, millisecond)).embed,
+        int(1000)
+      ).embed.η[M]
+    case MF.ExtractMillennium(a1) =>
+      Ceil(Div(extract(a1, year), int(1000)).embed).embed.η[M]
+    case MF.ExtractMilliseconds(a1) =>
+      Add(
+        Mult(extract(a1, second), int(1000)).embed,
+        extract(a1, millisecond)
+      ).embed.η[M]
+    case MF.ExtractMinute(a1) =>
+      extract(a1, minute).η[M]
+    case MF.ExtractMonth(a1) =>
+      extract(a1, month).η[M]
+    case MF.ExtractQuarter(a1) =>
+      extract(a1, quarter).η[M]
+    case MF.ExtractSecond(a1) =>
+      Add(
+        extract(a1, second),
+        Div(extract(a1, millisecond), int(1000)).embed
+      ).embed.η[M]
+    case MF.ExtractTimezone(a1) =>
+      extract(a1, timezone).η[M]
+    case MF.ExtractTimezoneHour(a1) =>
+      extract(a1, timezoneHour).η[M]
+    case MF.ExtractTimezoneMinute(a1) =>
+      extract(a1, timezoneMinute).η[M]
+    case MF.ExtractWeek(a1) =>
+      extract(a1, isoWeek).η[M]
+    case MF.ExtractYear(a1) =>
+      extract(a1, year).η[M]
+    case MF.StartOfDay(a1) =>
+        Case(
+          WhenThen(
+            SelectField(a1, str(TimestampKey)).embed,
+            Timestamp(trunc(Day, SelectField(a1, str(TimestampKey)).embed)).embed),
+          WhenThen(
+            SelectField(a1, str(DateKey)).embed,
+            Timestamp(trunc(Day, ConcatStr(SelectField(a1, str(DateKey)).embed, zeroTimeSuffix).embed)).embed)
+        )(
+          Else(undefined)
+        ).embed.η[M]
+    case MF.TemporalTrunc(Microsecond | Millisecond, a2) =>
+      a2.η[M]
+    case MF.TemporalTrunc(a1, a2) =>
+      temporalTrunc(a1, a2).η[M]
+    case MF.Now() =>
+      NowStr[T[N1QL]].embed.η[M]
 
     // math
-    case Negate(a1)       =>
-      partialQueryString(s"-${n1ql(a1)}").point[M]
-    case Add(a1, a2)      =>
-      partialQueryString(s"(${n1ql(a1)} + ${n1ql(a2)})").point[M]
-    case Multiply(a1, a2) =>
-      partialQueryString(s"(${n1ql(a1)} * ${n1ql(a2)})").point[M]
-    case Subtract(a1, a2) =>
-      partialQueryString(s"(${n1ql(a1)} - ${n1ql(a2)})").point[M]
-    case Divide(a1, a2)   =>
-      partialQueryString(s"(${n1ql(a1)} / ${n1ql(a2)})").point[M]
-    case Modulo(a1, a2)   =>
-      partialQueryString(s"(${n1ql(a1)} % ${n1ql(a2)})").point[M]
-    case Power(a1, a2)    =>
-      partialQueryString(s"power(${n1ql(a1)}, ${n1ql(a2)})").point[M]
+    case MF.Negate(a1) =>
+      Neg(a1).embed.η[M]
+    case MF.Add(a1, a2) =>
+      Add(a1, a2).embed.η[M]
+    case MF.Multiply(a1, a2) =>
+      Mult(a1, a2).embed.η[M]
+    case MF.Subtract(a1, a2) =>
+      Sub(a1, a2).embed.η[M]
+    case MF.Divide(a1, a2) =>
+      Div(a1, a2).embed.η[M]
+    case MF.Modulo(a1, a2) =>
+      Mod(a1, a2).embed.η[M]
+    case MF.Power(a1, a2) =>
+      Pow(a1, a2).embed.η[M]
 
     // relations
-    case Not(a1)             =>
-      partialQueryString(s"not ${n1ql(a1)}").point[M]
-    case Eq(a1, a2)          =>
-      rel(a1, a2, "=")
-    case Neq(a1, a2)         =>
-      val a1N1ql = n1ql(a1)
-      val a2N1ql = n1ql(a2)
-      for {
-        r <- rel(a1, a2, "!=")
-        _ <- prtell[M](Vector(detail(
-               "N1QL Neq",
-               s"""  a1:   $a1N1ql
-                  |  a2:   $a2N1ql
-                  |  n1ql: ${n1ql(r)}""".stripMargin('|')
-             )))
-      } yield r
-    case Lt(a1, a2)          =>
-      rel(a1, a2, "<")
-    case Lte(a1, a2)         =>
-      rel(a1, a2, "<=")
-    case Gt(a1, a2)          =>
-      rel(a1, a2, ">")
-    case Gte(a1, a2)         =>
-      rel(a1, a2, ">=")
-    case IfUndefined(a1, a2) =>
-      partialQueryString(s"ifmissing(${n1ql(a1)}, ${n1ql(a2)})").point[M]
-    case And(a1, a2)         =>
-      partialQueryString(s"(${n1ql(a1)} and ${n1ql(a2)})").point[M]
-    case Or(a1, a2)          =>
-      partialQueryString(s"(${n1ql(a1)} or ${n1ql(a2)})").point[M]
-    case Between(a1, a2, a3) =>
-      val a1N1ql = n1ql(a1)
-      val a2N1ql = n1ql(a2)
-      val a3N1ql = n1ql(a3)
-      for {
-        b <- (rel(a1, a2, ">=") ⊛ rel(a1, a3, "<="))((a, b) =>
-               partialQueryString(s"${n1ql(a)} and ${n1ql(b)}")
-             )
-        _ <- prtell[M](Vector(detail(
-               "N1QL Between",
-               s"""  a1:   $a1N1ql
-                  |  a2:   $a2N1ql
-                  |  a3:   $a3N1ql
-                  |  n1ql: $b""".stripMargin('|')
-             )))
-      } yield b
-    case Cond(cond, then_, else_) =>
-      partialQueryString(s"""
-        (case
-         when ${n1ql(cond)} then ${n1ql(then_)}
-         else ${n1ql(else_)}
-         end)"""
-      ).point[M]
+    case MF.Not(a1) =>
+      Not(a1).embed.η[M]
+    case MF.Eq(a1, a2) => a2.project match {
+      case Data(QData.Null) => IsNull(unwrap(a1)).embed.η[M]
+      case _                => rel(Eq(a1, a2)).η[M]
+    }
+    case MF.Neq(a1, a2) => a2.project match {
+      case Data(QData.Null) => IsNotNull(unwrap(a1)).embed.η[M]
+      case _                => rel(Neq(a1, a2)).η[M]
+    }
+    case MF.Lt(a1, a2) =>
+      rel(Lt(a1, a2)).η[M]
+    case MF.Lte(a1, a2) =>
+      rel(Lte(a1, a2)).η[M]
+    case MF.Gt(a1, a2) =>
+      rel(Gt(a1, a2)).η[M]
+    case MF.Gte(a1, a2) =>
+      rel(Gte(a1, a2)).η[M]
+    case MF.IfUndefined(a1, a2) =>
+      IfMissing(a1, a2).embed.η[M]
+    case MF.And(a1, a2) =>
+      And(a1, a2).embed.η[M]
+    case MF.Or(a1, a2) =>
+      Or(a1, a2).embed.η[M]
+    case MF.Between(a1, a2, a3) =>
+      And(rel(Gte(a1, a2)), rel(Lte(a1, a3))).embed.η[M]
+    case MF.Cond(cond, then_, else_) =>
+      Case(
+        WhenThen(cond, then_)
+      )(
+        Else(else_)
+      ).embed.η[M]
 
     // set
-    case Within(a1, a2) =>
-      partialQueryString(s"array_contains(${n1ql(a2)}, ${n1ql(a1)})").point[M]
+    case MF.Within(a1, a2) =>
+      ArrContains(a2, a1).embed.η[M]
 
     // string
-    case Lower(a1)             =>
-      partialQueryString(s"lower(${n1ql(a1)})").point[M]
-    case Upper(a1)             =>
-      partialQueryString(s"upper(${n1ql(a1)})").point[M]
-    case Bool(a1)              =>
-      val a1N1ql = n1ql(a1)
-      partialQueryString(s"""
-        (case
-         when lower($a1N1ql) = "true"  then true
-         when lower($a1N1ql) = "false" then false
-         else null
-         end)"""
-      ).point[M]
+    case MF.Lower(a1) =>
+      Lower(a1).embed.η[M]
+    case MF.Upper(a1) =>
+      Upper(a1).embed.η[M]
+    case MF.Bool(a1) =>
+      Case(
+        WhenThen(
+          Eq(Lower(a1).embed, str("true")).embed,
+          bool(true)),
+        WhenThen(
+          Eq(Lower(a1).embed, str("false")).embed,
+          bool(false))
+      )(
+        Else(undefined)
+      ).embed.η[M]
     // TODO: Handle large numbers across the board. Couchbase's number type truncates.
-    case Integer(a1)           =>
-      val a1N1ql = n1ql(a1)
-      partialQueryString(s"""
-        (case
-         when tonumber($a1N1ql) = floor(tonumber($a1N1ql)) then tonumber($a1N1ql)
-         else null
-         end)"""
-      ).point[M]
-    case Decimal(a1)           =>
-      partialQueryString(s"""tonumber(${n1ql(a1)})""").point[M]
-    case Null(a1)              =>
-      partialQueryString(s"""
-        (case
-         when lower(${n1ql(a1)}) = "null" then null
-         else $naStr
-         end)"""
-      ).point[M]
-    case ToString(a1)          =>
-      val a1N1ql = n1ql(a1)
-      partialQueryString(
-        s"""ifnull(tostring($a1N1ql), ${n1ql(unwrap(a1))}, case when type($a1N1ql) = "null" then "null" else $a1N1ql end)"""
-      ).point[M]
-    case Search(a1, a2, a3)    =>
-      val a1N1ql = n1ql(a1)
-      val a2N1ql = n1ql(a2)
-      val a3N1ql = n1ql(a3)
-      partialQueryString(s"""
-        (case
-         when $a3N1ql then regexp_contains($a1N1ql, "(?i)(?s)" || $a2N1ql)
-         else regexp_contains($a1N1ql, "(?s)" || $a2N1ql)
-         end)"""
-       ).point[M]
-    case Substring(a1, a2, a3) =>
-      val a1N1ql = n1ql(a1)
-      val a2N1ql = n1ql(a2)
-      val a3N1ql = n1ql(a3)
-      partialQueryString(s"""
-        (case
-         when $a2N1ql < 0 then ""
-         when $a3N1ql < 0 then ifnull(substr($a1N1ql, $a2N1ql), "")
-         else ifnull(substr($a1N1ql, $a2N1ql, least($a3N1ql, length($a1N1ql) - $a2N1ql)), "")
-         end)"""
-      ).point[M]
+    case MF.Integer(a1) =>
+      Case(
+        WhenThen(
+          Eq(
+            ToNumber(a1).embed,
+            Floor(ToNumber(a1).embed).embed).embed,
+          ToNumber(a1).embed)
+      )(
+        Else(undefined)
+      ).embed.η[M]
+    case MF.Decimal(a1) =>
+      ToNumber(a1).embed.η[M]
+    case MF.Null(a1) =>
+      Case(
+        WhenThen(
+          Eq(Lower(a1).embed, nullStr).embed,
+          Null[T[N1QL]].embed)
+      )(
+        Else(undefined)
+      ).embed.η[M]
+    case MF.ToString(a1) =>
+      IfNull(
+        ToString(a1).embed,
+        unwrap(a1),
+        Case(
+          WhenThen(
+            Eq(Type(a1).embed, nullStr).embed ,
+            nullStr)
+        )(
+          Else(a1)
+        ).embed
+      ).embed.η[M]
+    case MF.Search(a1, a2, a3)    =>
+      Case(
+        WhenThen(
+          a3,
+          RegexContains(a1, ConcatStr(str("(?i)(?s)"), a2).embed).embed)
+      )(
+        Else(RegexContains(a1, ConcatStr(str("(?s)"), a2).embed).embed)
+      ).embed.η[M]
+    case MF.Substring(a1, a2, a3) =>
+      Case(
+        WhenThen(
+          Lt(a2, int(0)).embed,
+          emptyStr),
+        WhenThen(
+          Lt(a3, int(0)).embed,
+          IfNull(
+            Substr(a1, a2, None).embed,
+            emptyStr).embed)
+      )(
+        Else(IfNull(
+          Substr(
+            a1,
+            a2,
+            Least(a3, Sub(Length(a1).embed, a2).embed).embed.some
+          ).embed,
+          emptyStr).embed)
+      ).embed.η[M]
 
     // structural
-    case MakeArray(a1)                            =>
-      val a1N1ql  = n1ql(a1)
-      val n1qlStr = s"[$a1N1ql]"
-      prtell[M](Vector(detail(
-        "N1QL MakeArray",
-        s"""  a1:   $a1N1ql
-           |  n1ql: $n1qlStr""".stripMargin('|')
-      ))).as(
-        partialQueryString(n1qlStr)
-      )
-    case MakeMap(a1, a2)                          =>
-      for {
-        tmpName1 <- genName[M]
-        a1N1ql   =  n1ql(a1)
-        a2N1ql   =  n1ql(a2)
-        sel      =  select(
-                      value         = true,
-                      resultExprs   = s"{ to_string($a1N1ql): ifnull($tmpName1, $naStr) }".wrapNel,
-                      keyspace      = a2,
-                      keyspaceAlias = tmpName1)
-        objAdd   =  partialQueryString(s"""object_add({}, $a1N1ql, $a2N1ql)""")
-        rN1ql    =  a2 match {
-                      case _: Select => sel
-                      case _         => objAdd
-                    }
-        _        <- prtell[M](Vector(detail(
-                      "N1QL MakeMap",
-                      s"""  a1:   $a1N1ql
-                         |  a2:   $a2N1ql
-                         |  n1ql: ${n1ql(rN1ql)}""".stripMargin('|')
-                    )))
-      } yield rN1ql
-    case ConcatArrays(a1, a2)                     =>
-      val a1N1ql  = n1ql(a1)
-      val a2N1ql  = n1ql(a2)
-      val n1qlStr = s"""
-        ifnull($a1N1ql || $a2N1ql, array_concat(
-          case when isstring($a1N1ql) then split($a1N1ql, "") else $a1N1ql end,
-          case when isstring($a2N1ql) then split($a2N1ql, "") else $a2N1ql end))"""
-      prtell[M](Vector(detail(
-        "N1QL ConcatArrays",
-        s"""  a1:   $a1N1ql
-           |  a2:   $a2N1ql
-           |  n1ql: $n1qlStr""".stripMargin('|')
-      ))).as(
-        partialQueryString(n1qlStr)
-      )
-    case ConcatMaps(a1, a2)                       =>
-      val a1N1ql  = n1ql(a1)
-      val a2N1ql  = n1ql(a2)
-      val n1qlStr = s"object_concat($a1N1ql, $a2N1ql)"
-      prtell[M](Vector(detail(
-        "N1QL ConcatMaps",
-        s"""  a1:   $a1N1ql
-           |  a2:   $a2N1ql
-           |  n1ql: $n1qlStr""".stripMargin('|')
-      ))).as(
-        partialQueryString(n1qlStr)
-      )
-    case ProjectField(a1N1ql @ PartialQueryString(a1), a2) =>
-      val r = proj(a1N1ql, a2)
-      prtell[M](Vector(detail(
-        "N1QL ProjectField(PartialQueryString(_), _)",
-        s"""  a1:   $a1
-           |  a2:   ${n1ql(a2)}
-           |  n1ql: ${n1ql(r)}""".stripMargin('|')
-      ))).as(
-        r
-      )
-    case ProjectField(a1, a2) =>
-      for {
-        tempName <- genName[M]
-        a1N1ql   =  n1ql(a1)
-        a2N1ql   =  n1ql(a2)
-        s        =  select(
-                      value         = true,
-                      resultExprs   = n1ql(proj(partialQueryString(tempName), a2)).wrapNel,
-                      keyspace      = a1,
-                      keyspaceAlias = tempName)
-        sN1ql    =  n1ql(s)
-        _        <- prtell[M](Vector(detail(
-                      "N1QL ProjectField(_, _)",
-                      s"""  a1:   $a1N1ql
-                         |  a2:   $a2N1ql
-                         |  n1ql: $sN1ql""".stripMargin('|'))))
-      } yield s
-    case ProjectIndex(PartialQueryString(a1), a2) =>
-      val a2N1ql  = n1ql(a2)
-      val n1qlStr = s"$a1[$a2N1ql]"
-      prtell[M](Vector(detail(
-        "N1QL ProjectIndex(PartialQueryString(_), _)",
-        s"""  a1:   $a1
-           |  a2:   $a2N1ql
-           |  n1ql: $n1qlStr""".stripMargin('|')
-      ))).as(
-        partialQueryString(n1qlStr)
-      )
-    case ProjectIndex(a1, a2)                     =>
-      for {
-        tmpName1 <- genName[M]
-        tmpName2 <- genName[M]
-        a1N1ql   =  n1ql(a1)
-        a2N1ql   =  n1ql(a2)
-                    // TODO: custom select for the moment
-        n1qlStr  =  s"(select value $tmpName1[$a2N1ql] let $tmpName1 = (select value array_agg($tmpName2) from $a1N1ql $tmpName2))"
-        _        <- prtell[M](Vector(detail(
-                      "N1QL ProjectIndex(_, _)",
-                      s"""  a1:   $a1N1ql
-                         |  a2:   $a2N1ql
-                         |  n1ql: $n1qlStr""".stripMargin('|'))))
-      } yield partialQueryString(n1qlStr)
-    case DeleteField(a1, a2)                      =>
-      partialQueryString(s"object_remove(${n1ql(a1)}, ${n1ql(a2)})").point[M]
+    case MF.MakeArray(a1) =>
+      Arr(List(a1)).embed.η[M]
+    case MF.MakeMap(a1, a2) =>
+      genId[T[N1QL], M] ∘ (id1 => selectOrElse(
+        a2,
+        Select(
+          Value(true),
+          ResultExpr(
+            Obj(Map(
+              ToString(a1).embed -> IfNull(id1.embed, undefined).embed
+            )).embed,
+            none
+          ).wrapNel,
+          Keyspace(a2, id1.some).some,
+          unnest  = none,
+          let     = nil,
+          filter  = none,
+          groupBy = none,
+          orderBy = nil).embed,
+      Obj(Map(a1 -> a2)).embed))
+    case MF.ConcatArrays(a1, a2) =>
+      def containsAgg(v: T[N1QL]): Boolean = v.cataM[Option, Unit] {
+        case Avg(_) | Count(_) | Max(_) | Min(_) | Sum(_) | ArrAgg(_) => none
+        case _                                                        => ().some
+      }.isEmpty
+
+      (containsAgg(a1) || containsAgg(a2)).fold(
+        IfNull(
+          ConcatStr(a1, a2).embed,
+          ConcatArr(
+            Case(
+              WhenThen(
+                IsString(a1).embed,
+                Split(a1, emptyStr).embed)
+            )(
+              Else(a1)
+            ).embed,
+            Case(
+              WhenThen(
+                IsString(a2).embed,
+                Split(a2, emptyStr).embed)
+            )(
+              Else(a2)
+            ).embed).embed
+        ).embed.η[M],
+        (genId[T[N1QL], M] ⊛ genId[T[N1QL], M]) { (id1, id2) =>
+          SelectElem(
+            Select(
+              Value(true),
+              ResultExpr(
+                IfNull(
+                  ConcatStr(id1.embed, id2.embed).embed,
+                  ConcatArr(Split(id1.embed, emptyStr).embed, id2.embed).embed,
+                  ConcatArr(id1.embed, Split(id2.embed, emptyStr).embed).embed,
+                  ConcatArr(id1.embed, id2.embed).embed).embed,
+                none
+              ).wrapNel,
+              keyspace = none,
+              unnest   = none,
+              List(Binding(id1, a1), Binding(id2, a2)),
+              filter   = none,
+              groupBy  = none,
+              orderBy  = nil).embed,
+            int(0)).embed
+        })
+    case MF.ConcatMaps(a1, a2) =>
+      ConcatObj(a1, a2).embed.η[M]
+    case MF.ProjectField(a1, a2) =>
+      genId[T[N1QL], M] ∘ (id1 => selectOrElse(
+        a1,
+        Select(
+          Value(true),
+          ResultExpr(SelectField(id1.embed, a2).embed, none).wrapNel,
+          Keyspace(a1, id1.some).some,
+          unnest  = none,
+          let     = nil,
+          filter  = none,
+          groupBy = none,
+          orderBy = nil).embed,
+        SelectField(a1, a2).embed))
+    case MF.ProjectIndex(a1, a2) =>
+      genId[T[N1QL], M] ∘ (id1 => selectOrElse(
+        a1,
+        Select(
+          Value(true),
+          ResultExpr(SelectElem(id1.embed, a2).embed, none).wrapNel,
+          Keyspace(a1, id1.some).some,
+          unnest  = none,
+          let     = nil,
+          filter  = none,
+          groupBy = none,
+          orderBy = nil).embed,
+        SelectElem(a1, a2).embed))
+    case MF.DeleteField(a1, a2) =>
+      ObjRemove(a1, a2).embed.η[M]
+
+    case MF.Meta(a1) =>
+      Meta(a1).embed.η[M]
 
     // helpers & QScript-specific
-    case Range(a1, a2)             =>
-      val a1N1ql = n1ql(a1)
-      val a2N1ql = n1ql(a2)
-      partialQueryString(s"[$a2N1ql:($a1N1ql + 1)]").point[M]
-    case Guard(expr, typ, cont, _) =>
-      val exprN1ql     = n1ql(expr)
-      val contN1ql     = n1ql(cont)
-      def grd(f: String, e: String, c: String) =
-        partialQueryString(s"(case when $f($e) then $c else $naStr end)")
-      def grdSel(f: String) = genName[M] ∘ (n =>
-        select(
-          value         = true,
-          resultExprs   = n1ql(grd(f, n, n)).wrapNel,
-          keyspace      = cont,
-          keyspaceAlias = n))
-      ((cont, typ) match {
-        case (_: Select, _: Type.FlexArr) => grdSel("isarray")
-        case (_: Select, _: Type.Obj)     => grdSel("isobject")
-        case (_        , _: Type.FlexArr) => grd("isarray", exprN1ql, contN1ql).point[M]
-        case (_        , _: Type.Obj)     => grd("isobject", exprN1ql, contN1ql).point[M]
-        case _                            => cont.point[M]
-      }) >>= (r =>
-        prtell[M](Vector(detail(
-         "N1QL Guard",
-         s"""  expr:     $exprN1ql
-            |  typ:      $typ
-            |  cont:     $contN1ql
-            |  n1ql:     ${n1ql(r)}""".stripMargin('|')
-        ))).as(
-         r
-        )
-      )
+    case MF.Range(a1, a2) =>
+      Slice(a2, Add(a1, int(1)).embed.some).embed.η[M]
+    case MF.Guard(expr, typ, cont, _) =>
+      def grd(f: T[N1QL] => T[N1QL], e: T[N1QL], c: T[N1QL]): T[N1QL] =
+        Case(
+          WhenThen(f(e), c))(
+          Else(undefined)).embed
+
+      def grdSel(f: T[N1QL] => T[N1QL]): M[T[N1QL]] =
+        genId[T[N1QL], M] ∘ (id =>
+          Select(
+            Value(true),
+            ResultExpr(grd(f, id.embed, id.embed), none).wrapNel,
+            Keyspace(cont, id.some).some,
+            unnest  = none,
+            let     = nil,
+            filter  = none,
+            groupBy = none,
+            orderBy = nil).embed)
+
+      def isArr(n: T[N1QL]): T[N1QL] = IsArr(n).embed
+      def isObj(n: T[N1QL]): T[N1QL] = IsObj(n).embed
+
+      (cont.project, typ) match {
+        case (_: Select[T[N1QL]], _: QType.FlexArr) => grdSel(isArr)
+        case (_: Select[T[N1QL]], _: QType.Obj)     => grdSel(isObj)
+        case (_                 , _: QType.FlexArr) => grd(isArr, expr, cont).η[M]
+        case (_                 , _: QType.Obj)     => grd(isObj, expr, cont).η[M]
+        case _                                      => cont.η[M]
+      }
   }
 }

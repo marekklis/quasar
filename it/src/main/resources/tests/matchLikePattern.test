@@ -6,6 +6,5 @@
     "data": "zips.data",
     "query": "select city from zips where city like \"%OULD%CIT%\"",
     "predicate": "containsAtLeast",
-    "expected": [{"city": "GOULD CITY"},
-                 {"city": "BOULDER CITY"}]
+    "expected": ["GOULD CITY", "BOULDER CITY"]
 }

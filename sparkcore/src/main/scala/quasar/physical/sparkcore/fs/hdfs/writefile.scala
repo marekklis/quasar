@@ -17,7 +17,7 @@
 package quasar.physical.sparkcore.fs.hdfs
 
 import quasar.Predef._
-import quasar.{Data, DataCodec, DataEncodingError}
+import quasar.{Data, DataCodec}
 import quasar.contrib.pathy._
 import quasar.effect._
 import quasar.fp.free._
@@ -97,12 +97,11 @@ object writefile {
 
     def _write(bw: BufferedWriter): Free[S, Vector[FileSystemError]] = {
 
-      val maybeLines: Vector[(DataEncodingError \/ String, Data)] =
-        chunks.map(data => (DataCodec.render(data), data))
+      val lines: Vector[(String, Data)] =
+        chunks.map(data => DataCodec.render(data) strengthR data).unite
 
-      lift(Task.delay(maybeLines.flatMap {
-        case (-\/(error), data) => Vector(writeFailed(data, error.message))
-        case (\/-(line), data) =>
+      lift(Task.delay(lines.flatMap {
+        case (line, data) =>
           \/.fromTryCatchNonFatal{
             bw.write(line)
             bw.newLine()

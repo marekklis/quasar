@@ -5,9 +5,13 @@
         "mongodb_3_0":       "pending",
         "mongodb_read_only": "pending",
         "mongodb_3_2":       "pending",
+        "mongodb_q_3_2":     "skip",
         "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "marklogic_json":    "skip",
+        "marklogic_xml":     "skip",
+        "couchbase":         "skip",
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
     },
     "data": "nullsWithMissing.data",
     "query": "select name,

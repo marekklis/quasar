@@ -17,7 +17,7 @@
 package quasar.frontend.logicalplan
 
 import quasar.Predef._
-import quasar._
+import quasar._, SemanticError.TypeError
 import quasar.common.SortDir
 import quasar.contrib.pathy.FPath
 import quasar.contrib.shapeless._
@@ -29,40 +29,45 @@ import quasar.namegen._
 import scala.Predef.$conforms
 import scala.Symbol
 
-import matryoshka._, Recursive.ops._, FunctorT.ops._
-import scalaz._, Scalaz._, Validation.success, Validation.FlatMap._
+import matryoshka._
+import matryoshka.data._
+import matryoshka.implicits._
+import scalaz._, Scalaz._, Validation.{failure, success}, Validation.FlatMap._
 import shapeless.{nat, Nat, Sized}
 
-final case class NamedConstraint[T[_[_]]]
-  (name: Symbol, inferred: Type, term: T[LP])
-final case class ConstrainedPlan[T[_[_]]]
-  (inferred: Type, constraints: List[NamedConstraint[T]], plan: T[LP])
+final case class NamedConstraint[T]
+  (name: Symbol, inferred: Type, term: T)
+final case class ConstrainedPlan[T]
+  (inferred: Type, constraints: List[NamedConstraint[T]], plan: T)
 
-class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
-  import quasar.std.StdLib._, structural._
+final class LogicalPlanR[T]
+  (implicit TR: Recursive.Aux[T, LP], TC: Corecursive.Aux[T, LP]) {
+  import quasar.std.DateLib._, quasar.std.StdLib, StdLib._, structural._
 
-  def read(path: FPath) = lp.read[T[LP]](path).embed
-  def constant(data: Data) = lp.constant[T[LP]](data).embed
-  def invoke[N <: Nat](func: GenericFunc[N], values: Func.Input[T[LP], N]) =
+  def read(path: FPath) = lp.read[T](path).embed
+  def constant(data: Data) = lp.constant[T](data).embed
+  def invoke[N <: Nat](func: GenericFunc[N], values: Func.Input[T, N]) =
     Invoke(func, values).embed
-  def invoke1(func: GenericFunc[nat._1], v1: T[LP]) =
+  def invoke1(func: GenericFunc[nat._1], v1: T) =
     invoke[nat._1](func, Func.Input1(v1))
-  def invoke2(func: GenericFunc[nat._2], v1: T[LP], v2: T[LP]) =
+  def invoke2(func: GenericFunc[nat._2], v1: T, v2: T) =
     invoke[nat._2](func, Func.Input2(v1, v2))
-  def invoke3(func: GenericFunc[nat._3], v1: T[LP], v2: T[LP], v3: T[LP]) =
+  def invoke3(func: GenericFunc[nat._3], v1: T, v2: T, v3: T) =
     invoke[nat._3](func, Func.Input3(v1, v2, v3))
-  def free(name: Symbol) = lp.free[T[LP]](name).embed
-  def let(name: Symbol, form: T[LP], in: T[LP]) =
+  def free(name: Symbol) = lp.free[T](name).embed
+  def let(name: Symbol, form: T, in: T) =
     lp.let(name, form, in).embed
-  def sort(src: T[LP], order: NonEmptyList[(T[LP], SortDir)]) =
+  def sort(src: T, order: NonEmptyList[(T, SortDir)]) =
     lp.sort(src, order).embed
-  def typecheck(expr: T[LP], typ: Type, cont: T[LP], fallback: T[LP]) =
+  def typecheck(expr: T, typ: Type, cont: T, fallback: T) =
     lp.typecheck(expr, typ, cont, fallback).embed
+  def temporalTrunc(part: TemporalPart, src: T) =
+    lp.temporalTrunc(part, src).embed
 
   // NB: this can't currently be generalized to Binder, because the key type
   //     isn't exposed there.
   def renameƒ[M[_]: Monad](f: Symbol => M[Symbol])
-      : CoalgebraM[M, LP, (Map[Symbol, Symbol], T[LP])] = {
+      : CoalgebraM[M, LP, (Map[Symbol, Symbol], T)] = {
     case (bound, t) =>
       t.project match {
         case Let(sym, expr, body) =>
@@ -74,10 +79,10 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
       }
   }
 
-  def rename[M[_]: Monad](f: Symbol => M[Symbol])(t: T[LP]): M[T[LP]] =
-    (Map[Symbol, Symbol](), t).anaM(renameƒ(f))
+  def rename[M[_]: Monad](f: Symbol => M[Symbol])(t: T): M[T] =
+    (Map[Symbol, Symbol](), t).anaM[T](renameƒ(f))
 
-  def normalizeTempNames(t: T[LP]) =
+  def normalizeTempNames(t: T) =
     rename[State[NameGen, ?]](κ(freshName("tmp")))(t).evalZero
 
   /** Per the following:
@@ -91,7 +96,7 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
     * it could create spurious shadowing. normalizeTempNames is recommended.
     * NB: at the moment, Lets are only hoisted one level.
     */
-  val normalizeLetsƒ: LP[T[LP]] => Option[LP[T[LP]]] = {
+  val normalizeLetsƒ: LP[T] => Option[LP[T]] = {
     case Let(b, Embed(Let(a, x1, x2)), x3) =>
       lp.let(a, x1, let(b, x2, x3)).some
 
@@ -129,13 +134,13 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
     case t => None
   }
 
-  def normalizeLets(t: T[LP]) = t.transAna(repeatedly(normalizeLetsƒ))
+  def normalizeLets(t: T) = t.transAna[T](repeatedly(normalizeLetsƒ))
 
   type Typed[F[_]] = Cofree[F, Type]
   type SemValidation[A] = ValidationNel[SemanticError, A]
   type SemDisj[A] = NonEmptyList[SemanticError] \/ A
 
-  def inferTypes(typ: Type, term: T[LP]):
+  def inferTypes(typ: Type, term: T):
       SemValidation[Typed[LP]] = {
 
     (term.project match {
@@ -163,6 +168,12 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
       case Sort(src, ords) =>
         (inferTypes(typ, src) ⊛ ords.traverse { case (a, d) => inferTypes(Type.Top, a) strengthR d })(lp.sort[Typed[LP]](_, _))
 
+      case TemporalTrunc(part, src) =>
+        typ.contains(Type.Temporal).fold(
+          inferTypes(Type.Temporal, src) ∘ (lp.temporalTrunc[Typed[LP]](part, _)),
+          failure((TypeError(Type.Temporal, typ, none): SemanticError).wrapNel)
+        )
+
       case Typecheck(expr, t, cont, fallback) =>
         (inferTypes(t, expr) ⊛ inferTypes(typ, cont) ⊛ inferTypes(typ, fallback))(
           lp.typecheck[Typed[LP]](_, t, _, _))
@@ -180,22 +191,22 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
     * • if the inferred is a subtype of the possible, we need a runtime check
     * • otherwise, we fail
     */
-  private def unifyOrCheck(inf: Type, poss: Type, term: T[LP])
+  private def unifyOrCheck(inf: Type, poss: Type, term: T)
       : NameT[SemDisj, ConstrainedPlan[T]] = {
     if (inf.contains(poss))
       emit(ConstrainedPlan(poss, Nil, poss match {
         case Type.Const(d) => constant(d)
         case _             => term
       }))
-    else if (poss.contains(inf)) {
-      emitName(freshName("check").map(name =>
-        ConstrainedPlan(inf, List(NamedConstraint(name, inf, term)), free(name))))
-    }
-    else lift((SemanticError.genericError(s"You provided a ${poss.shows} where we expected a ${inf.shows} in $term")).wrapNel.left)
+      else if (poss.contains(inf)) {
+        emitName(freshName("check").map(name =>
+          ConstrainedPlan(inf, List(NamedConstraint(name, inf, term)), free(name))))
+      }
+      else lift((SemanticError.genericError(s"You provided a ${poss.shows} where we expected a ${inf.shows} in $term")).wrapNel.left)
   }
 
   private def appConst
-    (constraints: ConstrainedPlan[T], fallback: T[LP]) =
+    (constraints: ConstrainedPlan[T], fallback: T) =
     constraints.constraints.foldLeft(constraints.plan)((acc, con) =>
       let(con.name, con.term,
         typecheck(free(con.name), con.inferred, acc, fallback)))
@@ -205,8 +216,8 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
     * shape.
     */
   private def ensureConstraint
-    (constraints: ConstrainedPlan[T], fallback: T[LP])
-      : State[NameGen, T[LP]] = {
+    (constraints: ConstrainedPlan[T], fallback: T)
+      : State[NameGen, T] = {
     val ConstrainedPlan(typ, consts, term) = constraints
       (consts match {
         case Nil =>
@@ -224,7 +235,7 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
     case (inf, term) =>
       def applyConstraints
         (poss: Type, constraints: ConstrainedPlan[T])
-        (f: T[LP] => T[LP]) =
+        (f: T => T) =
         unifyOrCheck(
           inf,
           poss,
@@ -244,7 +255,7 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
         case InvokeUnapply(ConcatOp, Sized(left, right)) =>
           val (types, constraints0, terms) = Func.Input2(left, right).map {
             case ConstrainedPlan(in, con, pl) => (in, (con, pl))
-          }.unzip3[Type, List[NamedConstraint[T]], T[LP]]
+          }.unzip3[Type, List[NamedConstraint[T]], T]
 
           val constraints = constraints0.unsized.flatten
 
@@ -259,14 +270,16 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
         case InvokeUnapply(structural.FlattenArray, Sized(arg)) =>
           for {
             types <- lift(structural.FlattenArray.tpe(Func.Input1(arg).map(_.inferred)).disjunction)
-            consts <- emitName[SemDisj, Func.Input[T[LP], nat._1]](Func.Input1(arg).traverse(ensureConstraint(_, constant(Data.Arr(List(Data.NA))))))
+            consts <- emitName[SemDisj, Func.Input[T, nat._1]](Func.Input1(arg).traverse(ensureConstraint(_, constant(Data.Arr(List(Data.NA))))))
             plan  <- unifyOrCheck(inf, types, invoke[nat._1](structural.FlattenArray, consts))
           } yield plan
         case InvokeUnapply(structural.FlattenMap, Sized(arg)) => for {
           types <- lift(structural.FlattenMap.tpe(Func.Input1(arg).map(_.inferred)).disjunction)
-          consts <- emitName[SemDisj, Func.Input[T[LP], nat._1]](Func.Input1(arg).traverse(ensureConstraint(_, constant(Data.Obj(ListMap("" -> Data.NA))))))
+          consts <- emitName[SemDisj, Func.Input[T, nat._1]](Func.Input1(arg).traverse(ensureConstraint(_, constant(Data.Obj(ListMap("" -> Data.NA))))))
           plan  <- unifyOrCheck(inf, types, invoke(structural.FlattenMap, consts))
         } yield plan
+        case InvokeUnapply(func @ NullaryFunc(_, _, _, _), Sized()) =>
+          handleGenericInvoke(inf, func, Sized[List]())
         case InvokeUnapply(func @ UnaryFunc(_, _, _, _, _, _, _), Sized(a1)) =>
           handleGenericInvoke(inf, func, Func.Input1(a1))
         case InvokeUnapply(func @ BinaryFunc(_, _, _, _, _, _, _), Sized(a1, a2)) =>
@@ -279,51 +292,70 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
           unifyOrCheck(inf, in.inferred, let(name, appConst(value, constant(Data.NA)), appConst(in, constant(Data.NA))))
         // TODO: Get the possible type from the LetF
         case Free(v) => emit(ConstrainedPlan(inf, Nil, free(v)))
-
         case Sort(expr, ords) =>
           unifyOrCheck(inf, expr.inferred, sort(appConst(expr, constant(Data.NA)), ords map (_ leftMap (appConst(_, constant(Data.NA))))))
+        case TemporalTrunc(part, src) =>
+          val typer: Func.Typer[Nat._1] = StdLib.partialTyperV[nat._1] {
+              case Sized(Type.Const(d @ Data.Date(_)))      => truncDate(part, d).validationNel ∘ (Type.Const(_))
+              case Sized(Type.Const(t @ Data.Time(_)))      => truncTime(part, t).validationNel ∘ (Type.Const(_))
+              case Sized(Type.Const(t @ Data.Timestamp(_))) => truncTimestamp(part, t).validationNel ∘ (Type.Const(_))
+              case Sized(t)                                 => t.success
+            }
+
+          val constructLPNode: Func.Input[T, Nat._1] => T = { case Sized(i) => temporalTrunc(part, i) }
+
+          handleInvoke(inf, typer, constructLPNode, Func.Input1(src))
       }
   }
 
-  private def handleGenericInvoke[N <: Nat]
-    (inf: Type, func: GenericFunc[N], args: Func.Input[ConstrainedPlan[T], N])
-      : NameT[SemDisj, ConstrainedPlan[T]] = {
+  private def handleInvoke[N <: Nat](
+    inf: Type,
+    typer: Func.Typer[N],
+    constructLPNode: Func.Input[T, N] => T,
+    args: Func.Input[ConstrainedPlan[T], N]
+  ): NameT[SemDisj, ConstrainedPlan[T]] = {
+    val (types, constraints0, terms) = args.map {
+      case ConstrainedPlan(in, con, pl) => (in, (con, pl))
+    }.unzip3[Type, List[NamedConstraint[T]], T]
+
+    val constraints = constraints0.unsized.flatten
+
+    lift(typer(types).disjunction).flatMap(
+      unifyOrCheck(inf, _, constructLPNode(terms))).map(cp =>
+      cp.copy(constraints = cp.constraints ++ constraints))
+  }
+
+  private def handleGenericInvoke[N <: Nat](
+    inf: Type, func: GenericFunc[N], args: Func.Input[ConstrainedPlan[T], N]
+  ): NameT[SemDisj, ConstrainedPlan[T]] = {
+    val constructLPNode = invoke(func, _: Func.Input[T, N])
     func.effect match {
       case Mapping =>
-        val (types, constraints0, terms) = args.map {
-          case ConstrainedPlan(in, con, pl) => (in, (con, pl))
-        }.unzip3[Type, List[NamedConstraint[T]], T[LP]]
-
-        val constraints = constraints0.unsized.flatten
-
-        lift(func.tpe(types).disjunction).flatMap(
-          unifyOrCheck(inf, _, invoke(func, terms))).map(cp =>
-            cp.copy(constraints = cp.constraints ++ constraints))
-
+        handleInvoke(inf, func.typer0, constructLPNode, args)
       case _ =>
-        lift(func.tpe(args.map(_.inferred)).disjunction).flatMap(
-          unifyOrCheck(inf, _, invoke(func, args.map(appConst(_, constant(Data.NA))))))
+        lift(func.typer0(args.map(_.inferred)).disjunction).flatMap(
+          unifyOrCheck(inf, _, constructLPNode(args.map(appConst(_, constant(Data.NA))))))
     }
   }
 
   type SemNames[A] = NameT[SemDisj, A]
 
-  def ensureCorrectTypes(term: T[LP]):
-      ValidationNel[SemanticError, T[LP]] = {
+  def ensureCorrectTypes(term: T):
+      ValidationNel[SemanticError, T] = {
     // TODO[scalaz]: Shadow the scalaz.Monad.monadMTMAB SI-2712 workaround
     import StateT.stateTMonadState
 
     inferTypes(Type.Top, term).flatMap(
-      cofCataM[LP, SemNames, Type, ConstrainedPlan[T]](_)(checkTypesƒ).map(appConst(_, constant(Data.NA))).evalZero.validation)
+      _.cataM(liftTM(checkTypesƒ)).map(appConst(_, constant(Data.NA))).evalZero.validation)
   }
 
   // TODO: Generalize this to Binder
   def lpParaZygoHistoM[M[_]: Monad, A, B](
-    t: T[LP])(
-    f: LP[(T[LP], B)] => B,
-    g: LP[Cofree[LP, (B, A)]] => M[A]):
+    t: T)(
+    f: LP[(T, B)] => B,
+      g: LP[Cofree[LP, (B, A)]] => M[A]):
       M[A] = {
-    def loop(t: T[LP], bind: Map[Symbol, Cofree[LP, (B, A)]]):
+    def loop(t: T, bind: Map[Symbol, Cofree[LP, (B, A)]]):
         M[Cofree[LP, (B, A)]] = {
       lazy val default: M[Cofree[LP, (B, A)]] = for {
         lp <- t.project.traverse(x => for {
@@ -353,7 +385,7 @@ class LogicalPlanR[T[_[_]]: Recursive: Corecursive] {
   def lpParaZygoHisto[A, B] = lpParaZygoHistoM[Id, A, B] _
 
   /** The set of paths referenced in the given plan. */
-  def paths(lp: T[LP]): Set[FPath] =
+  def paths(lp: T): Set[FPath] =
     lp.foldMap(_.cata[Set[FPath]] {
       case Read(p) => Set(p)
       case other   => other.fold

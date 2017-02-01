@@ -22,12 +22,12 @@ import quasar.contrib.pathy._
 import quasar.effect._
 import quasar.fp._, free._
 import quasar.fs._
-import quasar.frontend.logicalplan.LogicalPlan
+import quasar.frontend.logicalplan.{LogicalPlan, LogicalPlanR}
 import quasar.std.IdentityLib.Squash
 import quasar.std.SetLib.Take
 
 import eu.timepit.refined.auto._
-import matryoshka.Fix
+import matryoshka.data.Fix
 import monocle.Lens
 import pathy.Path._
 import scalaz.{Lens => _, Failure => _, _}, Id.Id
@@ -39,14 +39,13 @@ class HierarchicalFileSystemSpec extends quasar.Qspec with FileSystemFixture {
   import InMemory.InMemState, FileSystemError._, PathError._
   import hierarchical.MountedResultH
   import ManageFile.MoveSemantics, QueryFile.ResultHandle
-  import quasar.frontend.fixpoint.lpf
 
+  val lpf = new LogicalPlanR[Fix[LogicalPlan]]
   val transforms = QueryFile.Transforms[F]
   val unsafeq = QueryFile.Unsafe[FileSystem]
 
   type ExecM[A] = transforms.ExecM[A]
   type MountedFs[A] = State[MountedState, A]
-  type MountedFsE[E, A] = EitherT[MountedFs, E, A]
 
   type HEff0[A] = Coproduct[MountedResultH, MountedFs, A]
   type HEff[A]  = Coproduct[MonotonicSeq, HEff0, A]

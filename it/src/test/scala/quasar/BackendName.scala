@@ -18,10 +18,15 @@ package quasar
 
 import quasar.Predef._
 
-import scalaz.Equal
+import scalaz._
+import scalaz.std.string._
 
 final case class BackendName(name: String) extends scala.AnyVal
 
 object BackendName {
-  implicit val equal: Equal[BackendName] = Equal.equalA
+  implicit val order: Order[BackendName] =
+    Order.orderBy(_.name)
+
+  implicit val show: Show[BackendName] =
+    Show.shows(_.name)
 }

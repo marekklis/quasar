@@ -16,6 +16,7 @@
 
 package quasar
 
+import quasar.contrib.scalaz.MonadError_
 import quasar.effect.Failure
 import quasar.fp._
 import quasar.fp.free._
@@ -28,7 +29,7 @@ package object fs extends PhysicalErrorPrisms {
   type FileSystemFailure[A] = Failure[FileSystemError, A]
   type FileSystemErrT[F[_], A] = EitherT[F, FileSystemError, A]
 
-  type MonadFsErr[F[_]] = MonadError[F, FileSystemError]
+  type MonadFsErr[F[_]] = MonadError_[F, FileSystemError]
 
   object MonadFsErr {
     def apply[F[_]](implicit F: MonadFsErr[F]): MonadFsErr[F] = F

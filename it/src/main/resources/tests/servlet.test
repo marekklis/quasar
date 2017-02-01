@@ -1,13 +1,17 @@
 {
     "name": "servlets with and without init-param (pending #465, #467)",
     "backends": {
+        "couchbase":         "skip",
+        "marklogic_json":    "pending",
+        "marklogic_xml":     "pending",
         "mongodb_2_6":       "pending",
         "mongodb_3_0":       "pending",
         "mongodb_read_only": "pending",
         "mongodb_3_2":       "pending",
+        "mongodb_q_3_2":     "pending",
         "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "spark_local":       "pending",
+        "spark_hdfs":        "pending"
     },
     "data": "webapp.data",
     "query": "select \"servlet-name\", \"init-param\" is not null from webapp where \"init-param\" is null or \"init-param\".\"betaServer\"",

@@ -1,0 +1,1 @@
+- Fix bug in non-static array projection.

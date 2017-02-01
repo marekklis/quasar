@@ -32,6 +32,7 @@ import java.time.Duration
 import com.couchbase.client.java.CouchbaseCluster
 import com.couchbase.client.java.env.{CouchbaseEnvironment, DefaultCouchbaseEnvironment}
 import com.couchbase.client.java.error.InvalidPasswordException
+import com.couchbase.client.java.util.features.Version
 import org.http4s.Uri
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
@@ -41,6 +42,8 @@ import scalaz.concurrent.Task
 
 package object fs {
   val FsType = FileSystemType("couchbase")
+
+  val minimumRequiredVersion = new Version(4, 5, 1)
 
   val defaultQueryTimeout: Duration = Duration.ofSeconds(300)
 
@@ -96,10 +99,9 @@ package object fs {
                  })
       cm      =  cluster.clusterManager(params.user, params.pass)
       _       <- EitherT(Task.delay(
-                   // verify credentials via call to info
-                   cm.info
-                 ).as(
-                   ().right
+                   (cm.info.getMinVersion.compareTo(minimumRequiredVersion) >= 0).unlessM(
+                     s"Couchbase Server must be ${minimumRequiredVersion}+"
+                       .wrapNel.left[EnvironmentError].left)
                  ).handle {
                    case _: InvalidPasswordException =>
                      invalidCredentials(

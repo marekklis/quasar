@@ -18,13 +18,12 @@ package quasar
 
 import quasar.effect.Failure
 
-import pathy.Path.{File, Dir, Sandboxed}
+import pathy.Path.{File, Sandboxed}
 import scalaz.EitherT
 import scalaz.concurrent.Task
 
 package object config {
   type FsFile = FsPath[File, Sandboxed]
-  type FsDir  = FsPath[Dir, Sandboxed]
 
   type CfgErr[A]  = Failure[ConfigError, A]
 

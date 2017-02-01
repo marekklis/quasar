@@ -169,50 +169,52 @@ class ServiceSpec extends quasar.Qspec {
   }
 
   "/data/fs" should {
-
-    lazy val fileSystemConfigs = {
-      val fsCfgs = TestConfig.backendNames
-        .traverse((TestConfig.backendEnvName _ >>> TestConfig.loadConfig _)(_).run)
-        .map(_
+    val fileSystemConfigs =
+      TestConfig.backendRefs
+        .traverse { ref =>
+          val connectionUri = TestConfig.loadConnectionUri(ref.ref)
+          connectionUri.map(MountConfig.fileSystemConfig(ref.fsType, _)).run
+        }.map(_
           .unite
           .zipWithIndex
           .map { case (c, i) => (rootDir </> dir("data") </> dir(i.toString)) -> c }
           .toMap[APath, MountConfig])
         .unsafePerformSync
 
-      "fileSystemConfigs empty" <==> (fsCfgs must not(beEmpty))
+    val testName = "MOVE view"
 
-      fsCfgs
-    }
+    if (fileSystemConfigs.isEmpty) {
+      testName in skipped("Warning: no environment variables set.")
+    } else {
+      testName in {
+        val port = Http4sUtils.anyAvailablePort.unsafePerformSync
 
-    "MOVE view" in {
-      val port = Http4sUtils.anyAvailablePort.unsafePerformSync
+        val srcPath = rootDir </> dir("view") </> file("a")
+        val dstPath = rootDir </> dir("view") </> file("b")
 
-      val srcPath = rootDir </> dir("view") </> file("a")
-      val dstPath = rootDir </> dir("view") </> file("b")
+        val viewConfig = MountConfig.viewConfig(MountServiceConfig.unsafeViewCfg("select 42"))
 
-      val viewConfig = MountConfig.viewConfig(MountServiceConfig.unsafeViewCfg("select 42"))
+        val webConfig = WebConfig.mountings.set(
+          MountingsConfig(Map(
+            srcPath -> viewConfig) ++ fileSystemConfigs))(
+          configOps.default)
 
-      val webConfig = WebConfig.mountings.set(
-        MountingsConfig(Map(
-          srcPath -> viewConfig) ++ fileSystemConfigs))(
-        configOps.default)
+        val r = withServer(port, webConfig) { baseUri: Uri =>
+          client.fetch(
+            Request(
+              uri = baseUri / "data" / "fs" / "view" / "a",
+              method = Method.MOVE,
+              headers = Headers(Header("Destination", UriPathCodec.printPath(dstPath))))
+            )(Task.now) *>
+          client.fetch(
+            Request(
+              uri = baseUri / "data" / "fs" / "view" / "b",
+              method = Method.GET)
+            )(Task.now)
+        }
 
-      val r = withServer(port, webConfig) { baseUri: Uri =>
-        client.fetch(
-          Request(
-            uri = baseUri / "data" / "fs" / "view" / "a",
-            method = Method.MOVE,
-            headers = Headers(Header("Destination", UriPathCodec.printPath(dstPath))))
-          )(Task.now) *>
-        client.fetch(
-          Request(
-            uri = baseUri / "data" / "fs" / "view" / "b",
-            method = Method.GET)
-          )(Task.now)
+        r.map(_.status) must beRightDisjunction(Ok)
       }
-
-      r.map(_.status) must beRightDisjunction(Ok)
     }
 
     "MOVE a directory containing views and files" in {

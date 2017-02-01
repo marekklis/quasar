@@ -44,7 +44,6 @@ trait QuasarSpecification extends AnyRef
 
   // Fail fast and report all timings when running on CI.
   if (scala.sys.env contains "TRAVIS") {
-    args(stopOnFail = ArgProperty(true))
     args.report(showtimes = ArgProperty(true))
   }
 
@@ -70,11 +69,10 @@ trait QuasarSpecification extends AnyRef
   implicit class QuasarOpsForAsResultable[T: AsResult](t: => T) {
     /** Steps in front of the standard specs2 implicit. */
     def pendingUntilFixed: Result = pendingUntilFixed("")
-    def pendingUntilFixed(m: String): Result = (
-      if (coverageEnabled) Skipped(m + " (pending example skipped during coverage run)")
-      else if (isCIBuild) Skipped(m + " (pending example skipped during CI build)")
+    def pendingUntilFixed(m: String): Result =
+      if (coverageEnabled)
+        Skipped(m + " (pending example skipped during coverage run)")
       else outer.toPendingUntilFixed(t).pendingUntilFixed(m)
-    )
 
     def skippedOnUserEnv: Result            = skippedOnUserEnv("")
     def skippedOnUserEnv(m: String): Result = if (isIsolatedEnv) AsResult(t) else Skipped(m)

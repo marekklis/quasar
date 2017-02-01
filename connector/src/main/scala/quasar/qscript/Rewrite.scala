@@ -17,23 +17,22 @@
 package quasar.qscript
 
 import quasar.Predef._
-import quasar.contrib.matryoshka._
+import quasar.contrib.pathy.APath
 import quasar.fp._
 import quasar.fs.MonadFsErr
 import quasar.qscript.MapFunc._
 import quasar.qscript.MapFuncs._
 
-import matryoshka._,
-  Recursive.ops._,
-  FunctorT.ops._,
-  TraverseT.nonInheritedOps._
+import matryoshka._
+import matryoshka.data._
+import matryoshka.implicits._
 import matryoshka.patterns._
 import scalaz.{:+: => _, Divide => _, _},
   Inject.{ reflexiveInjectInstance => _, _ },
   Leibniz._,
   Scalaz._
 
-class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] {
+class Rewrite[T[_[_]]: BirecursiveT: EqualT] extends TTypes[T] {
   private val UnrefedSrc: QScriptTotal[FreeQS] =
     Inject[QScriptCore, QScriptTotal] inj Unreferenced[T, FreeQS]()
 
@@ -42,20 +41,18 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
     src: T[F])(
     implicit FI: Injectable.Aux[F, QScriptTotal]):
       Option[T[F]] =
-    freeCata[QScriptTotal, T[QScriptTotal], T[QScriptTotal]](
-      target.as(src.transAna(FI.inject)))(recover(_.embed)).transAnaM(FI project _)
+    target.as(src.transAna[T[QScriptTotal]](FI.inject)).cata(recover(_.embed)).transAnaM(FI project _)
 
-  def rebaseTCo[F[_]: Traverse](
-    target: FreeQS)(
-    srcCo: T[CoEnv[Hole, F, ?]])(
-    implicit FI: Injectable.Aux[F, QScriptTotal]):
-      Option[T[CoEnv[Hole, F, ?]]] =
+  def rebaseTCo[F[_]: Traverse]
+    (target: FreeQS)
+    (srcCo: T[CoEnv[Hole, F, ?]])
+    (implicit FI: Injectable.Aux[F, QScriptTotal])
+      : Option[T[CoEnv[Hole, F, ?]]] =
     // TODO: with the right instances & types everywhere, this should look like
-    //       target.transAnaM(_.htraverse(FI project _)) ∘ (srcCo >> _)
-    freeTransCataM[T, Option, QScriptTotal, F, Hole, Hole](
-      target)(
-      coEnvHtraverse(λ[QScriptTotal ~> (Option ∘ F)#λ](FI.project(_))).apply)
-      .map(targ => (targ >> srcCo.fromCoEnv).toCoEnv[T])
+    //       target.transAnaM(_.htraverse(FI project _)) ∘ (_ >> srcCo)
+    target.cataM[Option, T[CoEnv[Hole, F, ?]]](
+      CoEnv.htraverse(λ[QScriptTotal ~> (Option ∘ F)#λ](FI.project(_))).apply(_) ∘ (_.embed)) ∘
+      (targ => (targ.convertTo[Free[F, Hole]] >> srcCo.convertTo[Free[F, Hole]]).convertTo[T[CoEnv[Hole, F, ?]]])
 
   // TODO: These optimizations should give rise to various property tests:
   //       • elideNopMap ⇒ no `Map(???, HoleF)`
@@ -89,6 +86,38 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
               case LeftSide  => mf1
               case RightSide => mf2
             })).some
+          // left side maps over the data while the right side shifts the same data
+          case (Some(Map(\/-(SrcHole), mf1)), Some(LeftShift(-\/(values), struct, status, repair))) =>
+            FI.project(values) >>= QC.prj match {
+              case Some(Map(src2, mf2)) if src2 ≟ HoleQS =>
+                QC.inj(LeftShift(src,
+                  struct >> mf2,
+                  status,
+                  combine >>= {
+                    case LeftSide  => mf1 >> LeftSideF  // references `src`
+                    case RightSide => repair >>= {
+                      case LeftSide  => mf2 >> LeftSideF
+                      case RightSide => RightSideF
+                    }
+                  })).some
+              case _ => None
+            }
+          // right side maps over the data while the left side shifts the same data
+          case (Some(LeftShift(-\/(values), struct, status, repair)), Some(Map(\/-(SrcHole), mf2))) =>
+            FI.project(values) >>= QC.prj match {
+              case Some(Map(src1, mf1)) if src1 ≟ HoleQS =>
+                QC.inj(LeftShift(src,
+                  struct >> mf1,
+                  status,
+                  combine >>= {
+                    case LeftSide  => repair >>= {
+                      case LeftSide  => mf1 >> LeftSideF
+                      case RightSide => RightSideF
+                    }
+                    case RightSide => mf2 >> LeftSideF  // references `src`
+                  })).some
+              case _ => None
+            }
           // neither side references the src
           case (Some(Map(-\/(src1), mf1)), Some(Map(-\/(src2), mf2)))
               if src1 ≟ UnrefedSrc && src2 ≟ UnrefedSrc =>
@@ -158,6 +187,15 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
       case (_, _) => None
     }
 
+  def unifySimpleBranchesCoEnv[F[_], A]
+    (src: A, l: FreeQS, r: FreeQS, combine: JoinFunc)
+    (rebase: FreeQS => A => Option[A])
+    (implicit
+      QC: QScriptCore :<: F,
+      FI: Injectable.Aux[F, QScriptTotal])
+      : Option[CoEnv[Hole, F, A]] =
+    unifySimpleBranches(src, l, r, combine)(rebase)(QC, FI).map(fa => CoEnv(\/-(fa)))
+
   // FIXME: This really needs to ensure that the condition is that of an
   //        autojoin, otherwise it’ll elide things that are truly meaningful.
   def elideNopJoin[F[_], A]
@@ -204,6 +242,22 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
     case _ => None
   }
 
+  private def findUniqueBuckets(bucket0: FreeMap): Option[FreeMap] =
+    bucket0.resume match {
+      case -\/(array @ ConcatArrays(_, _)) =>
+        val bucket: FreeMap = rebuildArray(flattenArray(array).distinctE.toList)
+        if (bucket0 ≟ bucket) None else bucket.some
+     case _ => None
+  }
+
+  def uniqueBuckets = λ[QScriptCore ~> (Option ∘ QScriptCore)#λ] {
+    case Reduce(src, bucket, reducers, repair) =>
+      findUniqueBuckets(bucket).map(Reduce(src, _, reducers, repair))
+    case Sort(src, bucket, order) =>
+      findUniqueBuckets(bucket).map(Sort(src, _, order))
+    case _ => None
+  }
+
   // /** Chains multiple transformations together, each of which can fail to change
   //   * anything.
   //   */
@@ -237,6 +291,7 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
     repeatedly(Normalizable[F].normalizeF(_: F[T[G]])) ⋙
       liftFG(injectRepeatedly(elideNopJoin[F, T[G]](rebase))) ⋙
       liftFF(repeatedly(compactQC(_: QScriptCore[T[G]]))) ⋙
+      liftFF(repeatedly(uniqueBuckets(_: QScriptCore[T[G]]))) ⋙
       repeatedly(C.coalesceQC[G](prism)) ⋙
       liftFG(injectRepeatedly(C.coalesceTJ[G](prism.get))) ⋙
       (fa => QC.prj(fa).fold(prism.reverseGet(fa))(elideNopQC[F, G](prism.reverseGet)))
@@ -246,8 +301,9 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
              QC: QScriptCore :<: F,
              TJ: ThetaJoin :<: F,
              FI: Injectable.Aux[F, QScriptTotal]):
-      F[T[CoEnv[Hole, F, ?]]] => CoEnv[Hole, F, T[CoEnv[Hole, F, ?]]] =
-    applyNormalizations[F, CoEnv[Hole, F, ?]](coenvPrism, rebaseTCo)
+      F[Free[F, Hole]] => CoEnv[Hole, F, Free[F, Hole]] =
+    in => applyNormalizations[F, CoEnv[Hole, F, ?]](coenvPrism, rebaseTCo).apply(in ∘ (_.convertTo[T[CoEnv[Hole, F, ?]]])) ∘
+      (_.convertTo[Free[F, Hole]])
 
   def normalize[F[_]: Traverse: Normalizable](
     implicit C:  Coalesce.Aux[T, F, F],
@@ -272,12 +328,12 @@ class Rewrite[T[_[_]]: Recursive: Corecursive: EqualT: ShowT] extends TTypes[T] 
     * `f` takes QScript representing a _potential_ path to a file, converts
     * [[Root]] and its children to path, with the operations post-file remaining.
     */
-  def pathify[M[_]: MonadFsErr, IN[_]: Traverse, OUT[_]: Traverse]
+  def pathify[M[_]: Monad: MonadFsErr, IN[_]: Traverse, OUT[_]: Traverse]
     (g: DiscoverPath.ListContents[M])
     (implicit
       FS: DiscoverPath.Aux[T, IN, OUT],
-      R:     Const[Read, ?] :<: OUT,
-      QC: QScriptCore :<: OUT,
+      R:  Const[Read[APath], ?] :<: OUT,
+      QC:           QScriptCore :<: OUT,
       FI: Injectable.Aux[OUT, QScriptTotal])
       : T[IN] => M[T[OUT]] =
     _.cataM(FS.discoverPath[M](g)) >>= DiscoverPath.unionAll[T, M, OUT](g)

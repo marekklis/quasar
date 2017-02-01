@@ -16,8 +16,9 @@
 
 package quasar.qscript
 
-import quasar.fp._
 import quasar.RenderTree
+import quasar.contrib.pathy.APath
+import quasar.fp._
 
 import matryoshka._
 import monocle.macros.Lenses
@@ -29,14 +30,14 @@ import scalaz._, Scalaz._
   * record, with the id at element 0 and the record itself at element 1. If it’s
   * [[ExcludeId]], then it simply returns the record.
   */
-@Lenses final case class ShiftedRead
-  (path: AbsFile[Sandboxed], idStatus: IdStatus)
+@Lenses final case class ShiftedRead[A](path: A, idStatus: IdStatus)
 
 object ShiftedRead {
-  implicit def equal: Equal[ShiftedRead] = Equal.equalBy(_.path)
-  implicit def show: Show[ShiftedRead] =
+  implicit def equal[A: Equal]: Equal[ShiftedRead[A]] = Equal.equalBy(_.path)
+  implicit def show[A <: APath]: Show[ShiftedRead[A]] =
     Show.show(r => Cord("ShiftedRead(") ++
       posixCodec.printPath(r.path) ++ Cord(", ") ++
       r.idStatus.show ++ Cord(")"))
-  implicit def renderTree: RenderTree[ShiftedRead] = RenderTree.fromShow("ShiftedRead")
+  implicit def renderTree[A <: APath]: RenderTree[ShiftedRead[A]] =
+    RenderTree.fromShow("ShiftedRead")
 }

@@ -1,22 +1,23 @@
 {
-    "name": "project from concatted array",
+    "name": "project from non-static concatted array",
     "backends": {
         "mongodb_read_only": "pending",
+        "mongodb_q_3_2": "pending",
         "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
     },
     "data": "largeZips.data",
     "query": "select (loc || [1, 2])[1] from largeZips",
     "predicate": "containsAtLeast",
-    "expected": [{ "0": 42.377017 },
-                 { "0": 42.176443 },
-                 { "0": 42.202007 },
-                 { "0": 42.324662 },
-                 { "0": 42.129484 },
-                 { "0": 42.115066 },
-                 { "0": 42.085314 },
-                 { "0": 42.114455 },
-                 { "0": 42.453086 },
-                 { "0": 42.579563 }]
+    "expected": [42.377017,
+                 42.176443,
+                 42.202007,
+                 42.324662,
+                 42.129484,
+                 42.115066,
+                 42.085314,
+                 42.114455,
+                 42.453086,
+                 42.579563]
 }

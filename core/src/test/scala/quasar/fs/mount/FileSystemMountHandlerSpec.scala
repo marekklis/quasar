@@ -34,9 +34,8 @@ class FileSystemMountHandlerSpec extends quasar.Qspec {
   type Abort[A]  = Failure[String, A]
   type AbortM[A] = Free[Abort, A]
 
-  type ResMnts         = Mounts[DefinitionResult[AbortM]]
-  type ResMntsS[A]     = State[ResMnts, A]
-  type ResMntsSE[A, B] = EitherT[ResMntsS, A, B]
+  type ResMnts     = Mounts[DefinitionResult[AbortM]]
+  type ResMntsS[A] = State[ResMnts, A]
 
   type MountedFs[A]  = AtomicRef[ResMnts, A]
 

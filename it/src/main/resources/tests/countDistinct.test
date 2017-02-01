@@ -1,17 +1,16 @@
 {
-  "name": "count distinct",
+    "name": "count distinct",
 
-  "backends": {
-    "postgresql": "pending"
-  },
+    "backends": {
+        "mongodb_q_3_2": "pending",
+        "postgresql": "pending"
+    },
 
-  "data": "olympics.data",
+    "data": "olympics.data",
 
-  "query": "select count(distinct sport) as cnt from olympics",
+    "query": "select count(distinct sport) as cnt from olympics",
 
-  "predicate": "equalsExactly",
+    "predicate": "containsExactly",
 
-  "expected": [
-    { "cnt": 7 }
-  ]
+    "expected": [{ "cnt": 7 }]
 }

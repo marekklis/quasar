@@ -17,8 +17,6 @@ import scoverage._
 
 val BothScopes = "test->test;compile->compile"
 
-def isTravis: Boolean = sys.env contains "TRAVIS"
-
 // Exclusive execution settings
 lazy val ExclusiveTests = config("exclusive") extend Test
 
@@ -35,7 +33,6 @@ lazy val buildSettings = Seq(
   headers := Map(
     ("scala", Apache2_0("2014–2016", "SlamData Inc.")),
     ("java",  Apache2_0("2014–2016", "SlamData Inc."))),
-  scalaVersion := "2.11.8",
   scalaOrganization := "org.typelevel",
   outputStrategy := Some(StdoutOutput),
   initialize := {
@@ -52,7 +49,7 @@ lazy val buildSettings = Seq(
     "JBoss repository" at "https://repository.jboss.org/nexus/content/repositories/",
     "Scalaz Bintray Repo" at "http://dl.bintray.com/scalaz/releases",
     "bintray/non" at "http://dl.bintray.com/non/maven"),
-  addCompilerPlugin("org.spire-math"  %% "kind-projector" % "0.9.0"),
+  addCompilerPlugin("org.spire-math"  %% "kind-projector" % "0.9.3"),
   addCompilerPlugin("org.scalamacros" %  "paradise"       % "2.1.0" cross CrossVersion.full),
 
   ScoverageKeys.coverageHighlighting := true,
@@ -97,7 +94,7 @@ lazy val buildSettings = Seq(
 // actually available to run.
 concurrentRestrictions in Global := {
   val maxTasks = 2
-  if (isTravis)
+  if (isTravisBuild.value)
     // Recreate the default rules with the task limit hard-coded:
     Seq(Tags.limitAll(maxTasks), Tags.limit(Tags.ForkedTestGroup, 1))
   else
@@ -184,9 +181,10 @@ lazy val githubReleaseSettings =
       pushChanges)
   )
 
-lazy val isCIBuild        = settingKey[Boolean]("True when building in any automated environment (e.g. Travis)")
-lazy val isIsolatedEnv    = settingKey[Boolean]("True if running in an isolated environment")
-lazy val exclusiveTestTag = settingKey[String]("Tag for exclusive execution tests")
+lazy val isCIBuild               = settingKey[Boolean]("True when building in any automated environment (e.g. Travis)")
+lazy val isIsolatedEnv           = settingKey[Boolean]("True if running in an isolated environment")
+lazy val exclusiveTestTag        = settingKey[String]("Tag for exclusive execution tests")
+lazy val sparkDependencyProvided = settingKey[Boolean]("Whether or not the spark dependency should be marked as provided. If building for use in a Spark cluster, one would set this to true otherwise setting it to false will allow you to run the assembly jar on it's own")
 
 lazy val root = project.in(file("."))
   .settings(commonSettings)
@@ -207,10 +205,10 @@ lazy val root = project.in(file("."))
     core, couchbase, marklogic, mongodb, postgresql, skeleton, sparkcore,
 //      \ \ | / /
         interface,
-//        /  \
-      repl,   web,
-//        \  /
-           it)
+//        /   \
+       repl,  web,
+//             |
+              it)
   .enablePlugins(AutomateHeaderPlugin)
 
 // common components
@@ -227,7 +225,7 @@ lazy val foundation = project
     buildInfoKeys := Seq[BuildInfoKey](version, ScoverageKeys.coverageEnabled, isCIBuild, isIsolatedEnv, exclusiveTestTag),
     buildInfoPackage := "quasar.build",
     exclusiveTestTag := "exclusive",
-    isCIBuild := isTravis,
+    isCIBuild := isTravisBuild.value,
     isIsolatedEnv := java.lang.Boolean.parseBoolean(java.lang.System.getProperty("isIsolatedEnv")),
     libraryDependencies ++= Dependencies.foundation,
     wartremoverWarnings in (Compile, compile) -= Wart.NoNeedForMonad)
@@ -272,7 +270,6 @@ lazy val common = project
   .settings(commonSettings)
   .settings(publishTestsSettings)
   .settings(
-    libraryDependencies ++= Dependencies.core,
     ScoverageKeys.coverageMinimum := 79,
     ScoverageKeys.coverageFailOnMinimum := true,
     wartremoverWarnings in (Compile, compile) --= Seq(
@@ -305,7 +302,7 @@ lazy val frontend = project
   .settings(commonSettings)
   .settings(publishTestsSettings)
   .settings(
-    libraryDependencies ++= Dependencies.core,
+    libraryDependencies ++= Dependencies.frontend,
     ScoverageKeys.coverageMinimum := 79,
     ScoverageKeys.coverageFailOnMinimum := true,
     wartremoverWarnings in (Compile, compile) --= Seq(
@@ -320,7 +317,6 @@ lazy val sql = project
   .dependsOn(frontend % BothScopes)
   .settings(commonSettings)
   .settings(
-    libraryDependencies ++= Dependencies.core,
     wartremoverWarnings in (Compile, compile) --= Seq(
       Wart.Equals,
       Wart.NoNeedForMonad))
@@ -340,7 +336,6 @@ lazy val connector = project
   .settings(commonSettings)
   .settings(publishTestsSettings)
   .settings(
-    libraryDependencies ++= Dependencies.core,
     ScoverageKeys.coverageMinimum := 79,
     ScoverageKeys.coverageFailOnMinimum := true,
     wartremoverWarnings in (Compile, compile) --= Seq(
@@ -427,7 +422,8 @@ lazy val sparkcore = project
   .settings(commonSettings)
   .settings(assemblyJarName in assembly := "sparkcore.jar")
   .settings(
-    libraryDependencies ++= Dependencies.sparkcore,
+    sparkDependencyProvided := false,
+    libraryDependencies ++= Dependencies.sparkcore(sparkDependencyProvided.value),
     wartremoverWarnings in (Compile, compile) --= Seq(Wart.AsInstanceOf, Wart.NoNeedForMonad))
   .enablePlugins(AutomateHeaderPlugin)
 
@@ -440,7 +436,7 @@ lazy val interface = project
   .dependsOn(
     core % BothScopes,
     couchbase,
-    marklogic,
+    marklogic % BothScopes,
     mongodb,
     postgresql,
     sparkcore,
@@ -468,7 +464,7 @@ lazy val repl = project
   */
 lazy val web = project
   .settings(name := "quasar-web")
-  .dependsOn(interface, core % BothScopes)
+  .dependsOn(interface % BothScopes, core % BothScopes)
   .settings(commonSettings)
   .settings(publishTestsSettings)
   .settings(githubReleaseSettings)
@@ -486,10 +482,10 @@ lazy val web = project
   */
 lazy val it = project
   .configs(ExclusiveTests)
-  .dependsOn(web, core % BothScopes)
+  .dependsOn(web % BothScopes, core % BothScopes)
   .settings(commonSettings)
   .settings(noPublishSettings)
-  .settings(libraryDependencies ++= Dependencies.web)
+  .settings(libraryDependencies ++= Dependencies.it)
   // Configure various test tasks to run exclusively in the `ExclusiveTests` config.
   .settings(inConfig(ExclusiveTests)(Defaults.testTasks): _*)
   .settings(inConfig(ExclusiveTests)(exclusiveTasks(test, testOnly, testQuick)): _*)

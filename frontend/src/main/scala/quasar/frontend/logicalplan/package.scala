@@ -21,6 +21,7 @@ import quasar._
 import quasar.common.SortDir
 import quasar.contrib.pathy.FPath
 import quasar.namegen.NameGen
+import quasar.std.DateLib.TemporalPart
 
 import scala.Symbol
 
@@ -40,7 +41,7 @@ package object logicalplan {
   def invoke[A] =
     Prism.partial[LogicalPlan[A], (GenericFunc[Nat], Func.Input[A, Nat])] {
       case Invoke(f, as) => (f, as)
-    } ((Invoke[A, Nat](_, _)).tupled)
+    } ((Invoke[Nat, A](_, _)).tupled)
 
   def free[A] =
     Prism.partial[LogicalPlan[A], Symbol] { case Free(n) => n } (Free(_))
@@ -54,6 +55,11 @@ package object logicalplan {
     Prism.partial[LogicalPlan[A], (A, NonEmptyList[(A, SortDir)])] {
       case Sort(a, ords) => (a, ords)
     } ((Sort[A](_, _)).tupled)
+
+  def temporalTrunc[A] =
+    Prism.partial[LogicalPlan[A], (TemporalPart, A)] {
+      case TemporalTrunc(part, a) => (part, a)
+    } ((TemporalTrunc[A](_, _)).tupled)
 
   def typecheck[A] =
     Prism.partial[LogicalPlan[A], (A, Type, A, A)] {

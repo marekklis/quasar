@@ -24,7 +24,9 @@ import quasar.frontend.logicalplan.LogicalPlan
 import quasar.physical.mongodb.planner.MongoDbPlanner
 import quasar.physical.mongodb.workflow._
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import org.specs2.execute._
 import scalaz.{Name => _, _}, Scalaz._
 import shapeless.Nat
@@ -42,6 +44,10 @@ class MongoDbJsStdLibSpec extends MongoDbStdLibSpec {
 
     case (string.ToString, Data.Dec(_) :: Nil) =>
       Skipped("Dec printing doesn't match precisely").left
+    case (string.ToString, Data.Date(_) :: Nil) =>
+      Skipped("Date printing doesn't match").left
+    case (string.ToString, Data.Interval(_) :: Nil) =>
+      Skipped("Interval prints numeric representation").left
 
     case (math.Power, Data.Number(x) :: Data.Number(y) :: Nil)
         if x == 0 && y < 0 =>
@@ -59,6 +65,8 @@ class MongoDbJsStdLibSpec extends MongoDbStdLibSpec {
 
     case _                             => ().right
   }
+
+  def shortCircuitTC(args: List[Data]): Result \/ Unit = Skipped("TODO").left
 
   def compile(queryModel: MongoQueryModel, coll: Collection, lp: Fix[LogicalPlan])
       : PlannerError \/ (Crystallized[WorkflowF], BsonField.Name) = {

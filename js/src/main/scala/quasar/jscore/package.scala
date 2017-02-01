@@ -20,7 +20,9 @@ import quasar.Predef._
 import quasar.javascript.Js
 import quasar.fp._
 
-import matryoshka._, Recursive.ops._, FunctorT.ops._
+import matryoshka._
+import matryoshka.data._
+import matryoshka.implicits._
 import scalaz._, Scalaz._
 
 package object jscore {
@@ -43,7 +45,10 @@ package object jscore {
 
   val findFunctionsƒ: JsCoreF[(Fix[JsCoreF], Set[String])] => Set[String] = {
     case CallF((Fix(IdentF(Name(name))), _), args) =>
-      Foldable[List].fold(args.map(_._2)) + name
+      // WartRemover seems to be confused by the `+` method on `Set`
+      @SuppressWarnings(Array("org.wartremover.warts.StringPlusAny"))
+      val result = Foldable[List].fold(args.map(_._2)) + name
+      result
     case js => js.map(_._2).fold
   }
 
@@ -66,9 +71,12 @@ package object jscore {
   def unsafeAssign(lhs: JsCore, rhs: => JsCore): Js.Expr =
     Js.BinOp("=", lhs.toJs, rhs.toJs)
 
+  val meh = implicitly[EqualT[Fix]]
+  val meh2 = implicitly[Delay[Equal, JsCoreF]]
+
   private def replaceSolitary(oldForm: JsCore, newForm: JsCore, in: JsCore):
       Option[JsCore] =
-    in.para(count(oldForm)) match {
+    in.elgotPara(count(oldForm)) match {
       case 0 => in.some
       case 1 => in.substitute(oldForm, newForm).some
       case _ => None
@@ -101,7 +109,7 @@ package object jscore {
         case ObjF(values) =>
           // TODO: inline _part_ of the object when possible
           values.toList.foldRightM(body)((v, bod) =>
-            maybeReplace(Select(Ident(name), v._1.value), v._2, bod)).flatMap(finalBody => finalBody.para(count(Ident(name))) match {
+            maybeReplace(Select(Ident(name), v._1.value), v._2, bod)).flatMap(finalBody => finalBody.elgotPara(count(Ident(name))) match {
               case 0 => finalBody.project.some
               case _ => None
             })
@@ -166,7 +174,7 @@ package object jscore {
           Ident(tmp).toJs)
     }
 
-    val simplify = expr.transCata(repeatedly(simplifyƒ))
+    val simplify = expr.transCata[JsCore](repeatedly(simplifyƒ))
 
     def substitute(oldExpr: JsCore, newExpr: JsCore): JsCore = {
       @SuppressWarnings(Array("org.wartremover.warts.Equals"))

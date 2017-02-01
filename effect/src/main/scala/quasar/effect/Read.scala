@@ -17,6 +17,7 @@
 package quasar.effect
 
 import quasar.Predef._
+import quasar.contrib.scalaz._
 import quasar.fp.TaskRef
 import quasar.fp._, free._
 
@@ -40,8 +41,6 @@ object Read {
 
     /** Request and modify a value from the environment. */
     def asks[A](f: R => A): F[A] = ask map f
-
-    def asksM[A](f: R => F[A]): F[A] = ask flatMap f
 
     /** Evaluate a computation in a modified environment. */
     def local(f: R => R): F ~> F = {
@@ -76,9 +75,14 @@ object Read {
       new Ops[R, S]
   }
 
-  def contramapR[Q, R](f: Q => R)                      = λ[Read[R, ?] ~> Read[Q, ?]] { case Ask(g) => Ask(g compose f) }
-  def constant[F[_]: Applicative, R](r: R)             = λ[Read[R, ?] ~> F]          { case Ask(f) => r.point[F] map f }
-  def fromTaskRef[R](tr: TaskRef[R])                   = λ[Read[R, ?] ~> Task]       { case Ask(f) => tr.read map f    }
-  def toReader[F[_], R](implicit F: MonadReader[F, R]) = λ[Read[R, ?] ~> F]          { case Ask(f) => F asks f         }
-  def toState[F[_], R](implicit F: MonadState[F, R])   = λ[Read[R, ?] ~> F]          { case Ask(f) => F gets f         }
+  def contramapR[Q, R](f: Q => R)                    = λ[Read[R, ?] ~> Read[Q, ?]] { case Ask(g) => Ask(g compose f) }
+  def constant[F[_]: Applicative, R](r: R)           = λ[Read[R, ?] ~> F]          { case Ask(f) => r.point[F] map f }
+  def fromTaskRef[R](tr: TaskRef[R])                 = λ[Read[R, ?] ~> Task]       { case Ask(f) => tr.read map f    }
+  def toState[F[_], R](implicit F: MonadState[F, R]) = λ[Read[R, ?] ~> F]          { case Ask(f) => F gets f         }
+
+  def monadReader_[R, S[_]](implicit O: Ops[R, S]): MonadReader_[Free[S, ?], R] =
+    new MonadReader_[Free[S, ?], R] {
+      def ask = O.ask
+      def local[A](f: R => R)(fa: Free[S, A]) = O.local(f)(fa)
+    }
 }

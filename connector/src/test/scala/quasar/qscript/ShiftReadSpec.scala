@@ -17,19 +17,19 @@
 package quasar.qscript
 
 import quasar.Predef._
-import quasar.Data
-import quasar.contrib.matryoshka._
+import quasar.{Data, TreeMatchers}
 import quasar.fp._
+import quasar.contrib.pathy.APath
 import quasar.qscript.MapFuncs._
 import quasar.std.StdLib._
 
-import matryoshka._, FunctorT.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import pathy.Path._
 import scalaz._, Scalaz._
 
-class ShiftReadSpec extends quasar.Qspec with QScriptHelpers {
-  import quasar.frontend.fixpoint.lpf
-
+class ShiftReadSpec extends quasar.Qspec with QScriptHelpers with TreeMatchers {
   val rewrite = new Rewrite[Fix]
 
   "shiftRead" should {
@@ -41,28 +41,33 @@ class ShiftReadSpec extends quasar.Qspec with QScriptHelpers {
           ReadR(sampleFile),
           QC.inj(LeftShift((), HoleF, ExcludeId, Free.point(RightSide))))
 
-      val newQScript = transFutu(qScript)(ShiftRead[Fix, QS, QST].shiftRead(idPrism.reverseGet)(_))
+      val newQScript =
+        qScript.codyna(
+          rewrite.normalize[QST] >>> (_.embed),
+          ((_: Fix[QS]).project) >>> (ShiftRead[Fix, QS, QST].shiftRead(idPrism.reverseGet)(_)))
 
-      newQScript.transCata(rewrite.normalize) must_=
-      Fix(QCT.inj(Map(
-        Fix(SRT.inj(Const[ShiftedRead, Fix[QST]](ShiftedRead(sampleFile, ExcludeId)))),
-        Free.roll(ProjectIndex(HoleF, IntLit(1))))))
+      newQScript must
+      beTreeEqual(
+        Fix(QCT.inj(Map(
+          Fix(SRT.inj(Const[ShiftedRead[APath], Fix[QST]](ShiftedRead(sampleFile, ExcludeId)))),
+          Free.roll(ProjectIndex(HoleF, IntLit(1)))))))
     }
-  }
 
-  "shift a simple aggregated read" in {
-    convert(listContents.some,
-      structural.MakeObject(
-        lpf.constant(Data.Str("0")),
-        agg.Count(lpRead("/foo/bar")).embed).embed).map(
-      transFutu(_)(ShiftRead[Fix, QS, QST].shiftRead(idPrism.reverseGet)(_))
-        .transCata(rewrite.normalize[QST])) must
-    equal(chain(
-      SRT.inj(Const[ShiftedRead, Fix[QST]](
-        ShiftedRead(rootDir </> dir("foo") </> file("bar"), IncludeId))),
-      QCT.inj(Reduce((),
-        NullLit(),
-        List(ReduceFuncs.Count(Free.roll(ProjectIndex(HoleF, IntLit[Fix, Hole](1))))),
-        Free.roll(MakeMap(StrLit("0"), Free.point(ReduceIndex(0))))))).some)
+    "shift a simple aggregated read" in {
+      convert(lc.some,
+        structural.MakeObject(
+          lpf.constant(Data.Str("0")),
+          agg.Count(lpRead("/foo/bar")).embed).embed).map(
+        _.codyna(
+          rewrite.normalize[QST] >>> (_.embed),
+          ((_: Fix[QS]).project) >>> (ShiftRead[Fix, QS, QST].shiftRead(idPrism.reverseGet)(_)))) must
+      beTreeEqual(chain(
+        SRT.inj(Const[ShiftedRead[APath], Fix[QST]](
+          ShiftedRead(rootDir </> dir("foo") </> file("bar"), IncludeId))),
+        QCT.inj(Reduce((),
+          NullLit(),
+          List(ReduceFuncs.Count(Free.roll(ProjectIndex(HoleF, IntLit[Fix, Hole](1))))),
+          Free.roll(MakeMap(StrLit("0"), Free.point(ReduceIndex(0))))))).some)
+    }
   }
 }

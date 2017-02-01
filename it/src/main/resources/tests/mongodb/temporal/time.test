@@ -1,21 +1,31 @@
 {
-  "name": "filter on time_of_day (MongoDB)",
+    "name": "filter on time_of_day (MongoDB)",
 
-  "backends": {
-    "mongodb_read_only": "pending",
-    "postgresql":        "skip",
-    "marklogic":         "skip",
-    "couchbase":         "skip"
-  },
+    "backends": {
+        "couchbase":         "skip",
+        "marklogic_json":    "skip",
+        "marklogic_xml":     "skip",
+        "mongodb_read_only": "pending",
+        "mongodb_q_3_2":     "pending",
+        "postgresql":        "skip",
+        "spark_local":       "skip",
+        "spark_hdfs":        "skip"
+    },
 
-  "data": "../../days.data",
+    "data": "../../days.data",
 
-  "query": "select day, time_of_day(ts) as tod, time_of_day(day) as `not a date`, time_of_day(missing) as missing from `../../days`
-    where time_of_day(ts) >= time(\"08:00\") and time_of_day(ts) < time(\"10:20:30.400\")",
+    "query": "select
+                day,
+                time_of_day(ts) as tod,
+                time_of_day(day) as `not a date`,
+                time_of_day(missing) as missing
+              from `../../days`
+              where time_of_day(ts) >= time(\"08:00\")
+                and time_of_day(ts) < time(\"10:20:30.400\")",
 
-  "predicate": "containsExactly",
-  "expected": [
-      { "day": "Tuesday",   "tod": "08:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} },
-      { "day": "Wednesday", "tod": "09:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} },
-      { "day": "Thursday",  "tod": "10:00:00.000", "not a date": {"$na": null}, "missing": {"$na": null} }]
+    "predicate": "containsExactly",
+    "expected": [
+        { "day": "Tuesday",   "tod": "08:00:00.000" },
+        { "day": "Wednesday", "tod": "09:00:00.000" },
+        { "day": "Thursday",  "tod": "10:00:00.000" }]
 }

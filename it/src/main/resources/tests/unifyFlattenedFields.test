@@ -1,21 +1,23 @@
 {
     "name": "unify flattened fields",
     "backends": {
+        "couchbase":  "skip",
+        "mongodb_q_3_2": "pending",
         "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
     },
     "data": "zips.data",
     "query": "select loc[*] from zips where loc[*] < 0",
     "predicate": "containsAtLeast",
-    "expected": [{ "loc": -72.622739},
-                 { "loc": -72.51565},
-                 { "loc": -72.108354},
-                 { "loc": -72.410953},
-                 { "loc": -72.936114},
-                 { "loc": -72.188455},
-                 { "loc": -72.988761},
-                 { "loc": -72.833309},
-                 { "loc": -72.607962},
-                 { "loc": -72.576142}]
+    "expected": [-72.622739,
+                 -72.51565,
+                 -72.108354,
+                 -72.410953,
+                 -72.936114,
+                 -72.188455,
+                 -72.988761,
+                 -72.833309,
+                 -72.607962,
+                 -72.576142]
 }

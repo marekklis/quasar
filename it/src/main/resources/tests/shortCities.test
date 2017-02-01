@@ -1,10 +1,14 @@
 {
     "name": "shortest city names",
     "backends": {
+        "couchbase":         "skip",
+        "marklogic_json":    "pending",
+        "marklogic_xml":     "pending",
         "mongodb_read_only": "pending",
+        "mongodb_q_3_2":     "pending",
         "postgresql":        "pending",
-        "marklogic":         "skip",
-        "couchbase":         "skip"
+        "spark_local":       "pending",
+        "spark_hdfs":        "pending"
     },
     "data": "largeZips.data",
     "query": "select distinct city from largeZips order by length(city), city limit 5",

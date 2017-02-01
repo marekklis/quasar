@@ -1,19 +1,19 @@
 {
-  "name": "filter on is null",
+    "name": "filter on is null",
 
-  "backends": {
-    "postgresql": "pending"
-  },
+    "backends": {
+        "marklogic_json": "pending",
+        "mongodb_q_3_2":  "pending",
+        "postgresql":     "pending"
+    },
 
-  "description": "expression with `is null` should be true whenever the same filter is satisfied",
+    "description": "expression with `is null` should be true whenever the same filter is satisfied",
 
-  "data": "nulls.data",
+    "data": "nulls.data",
 
-  "query": "select distinct (val is null) as expr from nulls where val is null",
+    "query": "select distinct (val is null) as expr from nulls where val is null",
 
-  "predicate": "containsExactly",
+    "predicate": "containsExactly",
 
-  "expected": [
-    { "expr": true }
-  ]
+    "expected": [{ "expr": true }]
 }

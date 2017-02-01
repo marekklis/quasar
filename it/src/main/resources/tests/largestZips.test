@@ -2,7 +2,9 @@
     "name": "largest zips",
     "backends": {
         "postgresql": "pending",
-        "couchbase":  "skip"
+        "couchbase":  "skip",
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
     },
     "data": "zips.data",
     "query": "select city, pop from zips where pop > 90000 order by city, pop desc",

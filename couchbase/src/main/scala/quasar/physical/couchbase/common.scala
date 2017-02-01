@@ -54,6 +54,14 @@ object common {
 
   val CBDataCodec = DataCodec.Precise
 
+  def deleteHavingPrefix(
+    bucket: Bucket,
+    prefix: String
+  ): Task[Unit] = {
+    val qStr = s"""DELETE FROM `${bucket.name}` WHERE type LIKE "${prefix}%""""
+    Task.delay(bucket.query(n1qlQuery(qStr))).void
+  }
+
   def docTypesFromPrefix(
     bucket: Bucket,
     prefix: String

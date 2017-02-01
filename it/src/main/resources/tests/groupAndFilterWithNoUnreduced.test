@@ -1,20 +1,19 @@
 {
-  "name": "explicitly grouped, with only reduced projections, and a filter",
+    "name": "explicitly grouped, with only reduced projections, and a filter",
 
-  "backends": {
-    "postgresql": "pending"
-  },
+    "backends": {
+        "mongodb_q_3_2": "pending",
+        "postgresql": "pending"
+    },
 
-  "data": "zips.data",
+    "data": "zips.data",
 
-  "query": "select count(*) as cnt from zips where pop < 5 group by pop",
+    "query": "select count(*) as cnt from zips where pop < 5 group by pop",
 
-  "predicate": "containsExactly",
-  "expected": [
-    { "cnt": 66 },
-    { "cnt": 10 },
-    { "cnt":  9 },
-    { "cnt":  3 },
-    { "cnt":  1 }
-  ]
+    "predicate": "containsExactly",
+    "expected": [{ "cnt": 66 },
+                 { "cnt": 10 },
+                 { "cnt":  9 },
+                 { "cnt":  3 },
+                 { "cnt":  1 }]
 }

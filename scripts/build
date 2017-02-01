@@ -23,6 +23,7 @@ QUASAR_MONGODB_HOST_2_6="localhost:27018"
 QUASAR_MONGODB_HOST_3_0="localhost:27019"
 QUASAR_MONGODB_HOST_3_2="localhost:27020"
 
+TRAVIS_MAX_CONNECTOR_COMPILE_MINS=40
 JOB_NUM=${TRAVIS_JOB_NUMBER:="1"}
 
 # Enables running tests for a single mongo release by specifying an argument of
@@ -38,23 +39,32 @@ if [[ ${LOCAL_MONGODB:-} == "true" ]] ; then
   export QUASAR_TEST_PATH_PREFIX="/${QUASAR_MONGODB_TESTDB}/"
 
   if [[ "$QUASAR_MONGODB_RELEASE" == "2_6" ]]; then
-    export QUASAR_MONGODB_2_6="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_2_6}\"}}"
+    echo "mongodb_2_6=\"mongodb://${QUASAR_MONGODB_HOST_2_6}\"" > $TEST_CONFIG_FILE
   elif [[ "$QUASAR_MONGODB_RELEASE" == "3_0" ]]; then
-    export QUASAR_MONGODB_3_0="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_0}\"}}"
+    echo "mongodb_3_0=\"mongodb://${QUASAR_MONGODB_HOST_3_0}\"" > $TEST_CONFIG_FILE
   elif [[ "$QUASAR_MONGODB_RELEASE" == "3_0_RO" ]]; then
-    export QUASAR_MONGODB_READ_ONLY="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-read:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
-    export QUASAR_MONGODB_READ_ONLY_INSERT="{\"mongodb\": {\"connectionUri\": \"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"}}"
+    echo "mongodb_read_only=\"mongodb://quasar-read:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"" > $TEST_CONFIG_FILE
+    echo "mongodb_read_only_insert=\"mongodb://quasar-dbOwner:quasar@${QUASAR_MONGODB_HOST_3_0}/${QUASAR_MONGODB_TESTDB}\"" >> $TEST_CONFIG_FILE
   elif [[ "$QUASAR_MONGODB_RELEASE" == "3_2" ]]; then
-    export QUASAR_MONGODB_3_2="{\"mongodb\": {\"connectionUri\": \"mongodb://${QUASAR_MONGODB_HOST_3_2}\"}}"
+    echo "mongodb_3_2=\"mongodb://${QUASAR_MONGODB_HOST_3_2}\"" > $TEST_CONFIG_FILE
+    echo "mongodb_q_3_2=\"mongodb://${QUASAR_MONGODB_HOST_3_2}\"" >> $TEST_CONFIG_FILE
   fi
 
   echo "Using local MongoDB config"
 fi
 
 if [[ "${JOB_NUM##*.}" == "1" ]]; then
+  # Compiling `connector` can take awhile, so allow it some extra time when
+  # running on travis to avoid having the build killed due to lack of output.
+  if [[ ${TRAVIS:-} ]]; then
+    travis_wait $TRAVIS_MAX_CONNECTOR_COMPILE_MINS "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} clean coverage connector/test:compile
+  else
+    "$SBT" clean
+  fi
+
   # Require that all header comments are present before proceeding, then
   # build and run all tests everywhere (including integration)
-  "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} clean checkHeaders coverage test exclusive:test coverageReport
+  "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} checkHeaders coverage test exclusive:test coverageReport
 
   # In a fresh JVM process, re-compile without coverage in order to get a jar
   # that does not contain instrumentation. Generate doc.
@@ -68,6 +78,12 @@ if [[ "${JOB_NUM##*.}" == "1" ]]; then
 
   exit $TEST_STATUS
 else
+  # Compiling `connector` can take awhile, so allow it some extra time when
+  # running on travis to avoid having the build killed due to lack of output.
+  if [[ ${TRAVIS:-} ]]; then
+    travis_wait $TRAVIS_MAX_CONNECTOR_COMPILE_MINS "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} connector/test:compile
+  fi
+
   # Not the first job in Travis; run only integration tests (no sense
   # re-doing work that isn't affected by the available backends)
   "$SBT" -DisIsolatedEnv=${ISOLATED_ENV:=false} it/test it/exclusive:test

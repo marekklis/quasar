@@ -1,0 +1,1 @@
+Upgrade Kind Projector to `0.9.3`

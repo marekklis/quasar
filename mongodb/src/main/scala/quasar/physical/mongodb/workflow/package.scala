@@ -25,7 +25,9 @@ import quasar.physical.mongodb.expression._
 import quasar.physical.mongodb.optimize.pipeline._
 import quasar.physical.mongodb.workflowtask._
 
-import matryoshka._, Recursive.ops._, FunctorT.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import monocle.syntax.all._
 import scalaz._, Scalaz._
 
@@ -86,7 +88,7 @@ package object workflow {
   import fixExprOp._
 
   def task[F[_]: Functor](fop: Crystallized[F])(implicit C: Crush[F]): WorkflowTask =
-    (finish(_, _)).tupled(fop.op.para(C.crush[Fix]))._2.transAna(normalize)
+    (finish(_, _)).tupled(fop.op.para(C.crush[Fix]))._2.transAna[WorkflowTask](normalize)
 
   // NB: no need for a typeclass if implementing this way, but will be needed as
   //     soon as we need to coalesce anything _into_ a type that isn't 2.6.
@@ -223,8 +225,6 @@ package object workflow {
 
     def applySelector(s: Selector): Selector = s.mapUpFields(PartialFunction(applyFieldName _))
 
-    def applyMap[A](m: ListMap[BsonField, A]): ListMap[BsonField, A] = m.map(t => applyFieldName(t._1) -> t._2)
-
     def applyNel[A](m: NonEmptyList[(BsonField, A)]): NonEmptyList[(BsonField, A)] = m.map(t => applyFieldName(t._1) -> t._2)
 
     def apply[A <: F[_]](op: A): A
@@ -321,8 +321,8 @@ package object workflow {
       */
     // TODO: this doesn't seem to actually handle coalescing, so what was the
     // comment referring to?
-    def reparentW[T[_[_]]: Corecursive](newSrc: T[F])(implicit F: Functor[F]):
-        T[F] =
+    def reparentW[T](newSrc: T)(implicit T: Corecursive.Aux[T, F], F: Functor[F])
+        : T =
       reparent(newSrc).wf.embed
 
     def fmap[G[_], B](f: A => B, g: F ~> G): SingleSourceF[G, B] =
@@ -415,7 +415,7 @@ package object workflow {
   implicit def workflowFCrush(implicit I: WorkflowOpCoreF :<: WorkflowF):
       Crush[WorkflowF] =
     new Crush[WorkflowF] {
-      def crush[T[_[_]]: Recursive: FunctorT](
+      def crush[T[_[_]]: BirecursiveT](
         op: WorkflowF[(T[WorkflowF], (DocVar, WorkflowTask))]) = op match {
         case $pure(value) => (DocVar.ROOT(), PureTask(value))
         case $read(coll)  => (DocVar.ROOT(), ReadTask(coll))
@@ -516,11 +516,15 @@ package object workflow {
                   MapReduceTask(src, mr, Some(MapReduce.Action.Reduce(Some(true))))
                 // NB: `finalize` should ensure that the final op is always a
                 //     $ReduceF.
-                case src => scala.sys.error("not a mapReduce: " + src)
+                case src =>
+                  // TODO: Find a better way to print this
+                  @SuppressWarnings(Array("org.wartremover.warts.ToString"))
+                  val msg = "not a mapReduce: " + src.unFix.toString
+                  scala.sys.error(msg)
               })))
       }
 
-      def pipeline[T[_[_]]: Recursive: FunctorT](
+      def pipeline[T[_[_]]: BirecursiveT](
         op: PipelineF[WorkflowF, T[WorkflowF]]):
           Option[(DocVar, WorkflowTask, List[PipelineOp])] =
         op.wf match {
@@ -547,7 +551,7 @@ package object workflow {
           case _ => Some(alwaysPipePipe(op))
         }
 
-      def alwaysPipePipe[T[_[_]]: Recursive: FunctorT](
+      def alwaysPipePipe[T[_[_]]: BirecursiveT](
         op: PipelineF[WorkflowF, T[WorkflowF]]):
           (DocVar, WorkflowTask, List[PipelineOp]) = {
         lazy val (base, crushed) = (finish(_, _)).tupled(op.src.para(crush[T]))
@@ -574,13 +578,6 @@ package object workflow {
       }
     }
 
-  // TODO[matryoshka]: Add this there
-  def transHylo[T[_[_]]: FunctorT, F[_]: Functor, G[_]: Functor, H[_]: Functor](
-    t: T[F])(
-    φ: G[T[H]] => H[T[H]], ψ: F[T[F]] => G[T[F]]):
-      T[H] =
-    FunctorT[T].map(t)(ft => φ(ψ(ft).map(transHylo(_)(φ, ψ))))
-
   // NB: no need for a typeclass if implementing this way, but it will be needed
   // as soon as we need to match on anything here that isn't in core.
   implicit def crystallizeWorkflowF[F[_]: Functor: Classify: Coalesce: Refs](
@@ -601,11 +598,6 @@ package object workflow {
             case WorkflowOpCoreF(uw1 @ $UnwindF(_, _)) => unwindSrc(uw1)
             case src => src
           }
-
-        val uncleanƒ: F[Fix[F]] => Fix[F] = {
-          case WorkflowOpCoreF(x @ $SimpleMapF(_, _, _)) => I.inj(x.raw).embed
-          case x                                         => x.embed
-        }
 
         val crystallizeƒ: F[Fix[F]] => F[Fix[F]] = {
           case WorkflowOpCoreF(mr: MapReduceF[Fix[F]]) => mr.singleSource.src.project match {
@@ -652,18 +644,18 @@ package object workflow {
           case _                     => finished
         }
 
+        // FIXME: This _may_ be causing the failure.
         Crystallized(
-          transHylo(promoteKnownShape(finished))(Coalesce[F].coalesce, crystallizeƒ)
-            // TODO: this can coalesce more cases, but hasn’t been done thus far and
-            //       requires rewriting many tests in a much less readable way.
+          promoteKnownShape(finished).transHylo(Coalesce[F].coalesce, crystallizeƒ)
+            // TODO: this can coalesce more cases, but hasn’t been done thus far
+            //       and requires rewriting many tests in a much less readable
+            //       way.
             // .cata[Workflow](x => coalesce(uncleanƒ(x).project))
         )
       }
     }
 
-  implicit def workflowRenderTree[T[_[_]]: Recursive, F[_]: Traverse: Classify]
-    (implicit ev0: WorkflowOpCoreF :<: F, ev1: RenderTree[F[Unit]])
-      : RenderTree[T[F]] =
+  implicit def workflowRenderTree[T[_[_]]: RecursiveT, F[_]: Traverse: Classify](implicit ev0: WorkflowOpCoreF :<: F, ev1: RenderTree[F[Unit]]): RenderTree[T[F]] =
     new RenderTree[T[F]] {
       val wfType = "Workflow" :: Nil
 

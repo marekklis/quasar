@@ -17,17 +17,29 @@
 package quasar
 
 import quasar.Predef._
+import quasar.common.PrimaryType
 import quasar.fp._
 import quasar.fp.ski._
 import SemanticError.{TypeError, MissingField, MissingIndex}
 
 import scala.Any
 
-import argonaut._, Argonaut._
+import argonaut._, Argonaut._, ArgonautScalaz._
 import scalaz._, Scalaz._, NonEmptyList.nels, Validation.{success, failureNel}
 
 sealed trait Type extends Product with Serializable { self =>
   import Type._
+
+  final def toPrimaryType: Option[PrimaryType] =
+    if      (Str.contains(this))       common.Arr.some
+    else if (Binary.contains(this))    common.Arr.some
+    else if (AnyArray.contains(this))  common.Arr.some
+    else if (Bool.contains(this))      common.Bool.some
+    else if (Dec.contains(this))       common.Dec.some
+    else if (Int.contains(this))       common.Int.some
+    else if (Null.contains(this))      common.Null.some
+    else if (AnyObject.contains(this)) common.Map.some
+    else                               none
 
   final def ⨯ (that: Type): Type =
     (this, that) match {
@@ -43,11 +55,11 @@ sealed trait Type extends Product with Serializable { self =>
     }
 
   final def lub: Type = mapUp(self) {
-    case x @ Coproduct(_, _) => x.flatten.reduce(Type.lub)
+    case x @ Coproduct(_, _) => x.flatten.foldLeft1(Type.lub)
   }
 
   final def glb: Type = mapUp(self) {
-    case x @ Coproduct(_, _) => x.flatten.reduce(Type.glb)
+    case x @ Coproduct(_, _) => x.flatten.foldLeft1(Type.glb)
   }
 
   // FIXME: Using `≟` here causes runtime errors.
@@ -187,16 +199,6 @@ trait TypeInstances {
     }
   }
 
-  val TypeAndMonoid = new Monoid[Type] {
-    def zero = Type.Top
-
-    def append(v1: Type, v2: => Type) = (v1, v2) match {
-      case (Type.Top, that) => that
-      case (this0, Type.Top) => this0
-      case _ => v1 ⨯ v2
-    }
-  }
-
   val TypeGlbMonoid = new Monoid[Type] {
     def zero = Type.Top
     def append(f1: Type, f2: => Type) = Type.glb(f1, f2)
@@ -217,7 +219,7 @@ trait TypeInstances {
       "Obj(" + assocs.shows + ", " + unkns.shows + ")"
     case cp @ Coproduct(_, _) =>
       val cos = cp.flatten.map(_.shows)
-      cos.init.mkString(", ") + ", or " + cos.last
+      cos.init.toList.mkString(", ") + ", or " + cos.last
     case x => x.toString
   }
 
@@ -231,7 +233,7 @@ trait TypeInstances {
       case Bottom =>
         jString("Bottom")
       case Const(d) =>
-        Json("Const" -> DataCodec.Precise.encode(d).getOrElse(Json.obj("$na" -> jNull)))
+        Json("Const" -> DataCodec.Precise.encode(d).getOrElse(jString("Undefined")))
       case Null =>
         jString("Null")
       case Str =>
@@ -276,6 +278,17 @@ trait TypeInstances {
 
 object Type extends TypeInstances {
   type SemanticResult[A] = ValidationNel[SemanticError, A]
+
+  val fromPrimaryType: PrimaryType => Type = {
+    case common.Null => Null
+    case common.Bool => Bool
+    case common.Byte => Top
+    case common.Char => Top
+    case common.Int  => Int
+    case common.Dec  => Dec
+    case common.Arr  => Top
+    case common.Map  => AnyObject
+  }
 
   private def fail0[A](expected: Type, actual: Type, message: Option[String])
       : SemanticResult[A] =
@@ -322,7 +335,7 @@ object Type extends TypeInstances {
       case (Bottom, _) => failMsg(superType, subType, "Bottom is not a supertype of anything")
 
       case (superType @ Coproduct(_, _), subType @ Coproduct(_, _)) =>
-        typecheckCC(superType.flatten, subType.flatten)
+        typecheckCC(superType.flatten.toVector, subType.flatten.toVector)
       case (Arr(elem1), Arr(elem2)) =>
         if (elem1.length <= elem2.length)
           Zip[List].zipWith(elem1, elem2)(typecheck).concatenate
@@ -356,10 +369,10 @@ object Type extends TypeInstances {
               typecheck(p, _)))
 
       case (superType, subType @ Coproduct(_, _)) =>
-        typecheckPC(superType, subType.flatten)
+        typecheckPC(superType, subType.flatten.toVector)
 
       case (superType @ Coproduct(_, _), subType) =>
-        typecheckCP(superType.flatten, subType)
+        typecheckCP(superType.flatten.toVector, subType)
 
       case (superType, Const(subType)) => typecheck(superType, subType.dataType)
 
@@ -457,10 +470,10 @@ object Type extends TypeInstances {
       extends Type
 
   final case class Coproduct(left: Type, right: Type) extends Type {
-    def flatten: Vector[Type] = {
-      def flatten0(v: Type): Vector[Type] = v match {
-        case left ⨿ right => flatten0(left) ++ flatten0(right)
-        case x            => Vector(x)
+    def flatten: NonEmptyList[Type] = {
+      def flatten0(v: Type): NonEmptyList[Type] = v match {
+        case left ⨿ right => flatten0(left) append flatten0(right)
+        case x            => NonEmptyList(x)
       }
 
       flatten0(this)
@@ -475,10 +488,8 @@ object Type extends TypeInstances {
     }
   }
   object Coproduct {
-    def fromSeq(values: Seq[Type]): Type = {
-      if (values.isEmpty) Bottom
-      else values.tail.foldLeft[Type](values.head)(_ ⨿ _)
-    }
+    def fromSeq(values: Seq[Type]): Type =
+      values.reduceLeftOption(_ ⨿ _).getOrElse(Bottom)
   }
 
   object ⨿ {

@@ -29,6 +29,10 @@ class DataCodecSpecs extends quasar.Qspec {
   implicit val DataShow = new Show[Data] { override def show(v: Data) = v.toString }
   implicit val ShowStr = new Show[String] { override def show(v: String) = v }
 
+  def roundTrip(d: Data)(implicit C: DataCodec)
+      : Option[DataEncodingError \/ Data] =
+    DataCodec.render(d).map(DataCodec.parse(_))
+
   "Precise" should {
     implicit val codec = DataCodec.Precise
 
@@ -45,39 +49,39 @@ class DataCodecSpecs extends quasar.Qspec {
     "render" should {
       // NB: these tests verify that all the formatting matches our documentation
 
-      "encode null"      in { DataCodec.render(Data.Null)     must beRightDisjunction("null") }
-      "encode true"      in { DataCodec.render(Data.True)     must beRightDisjunction("true") }
-      "encode false"     in { DataCodec.render(Data.False)    must beRightDisjunction("false") }
-      "encode int"       in { DataCodec.render(Data.Int(0))   must beRightDisjunction("0") }
-      "encode dec"       in { DataCodec.render(Data.Dec(1.1)) must beRightDisjunction("1.1") }
-      "encode dec with no fractional part" in { DataCodec.render(Data.Dec(2.0)) must beRightDisjunction("2.0") }
-      "encode timestamp" in { DataCodec.render(Data.Timestamp(Instant.parse("2015-01-31T10:30:00Z"))) must beRightDisjunction("""{ "$timestamp": "2015-01-31T10:30:00Z" }""") }
-      "encode date"      in { DataCodec.render(Data.Date(LocalDate.parse("2015-01-31")))              must beRightDisjunction("""{ "$date": "2015-01-31" }""") }
-      "encode time"      in { DataCodec.render(Data.Time(LocalTime.parse("10:30:00.000")))            must beRightDisjunction("""{ "$time": "10:30:00.000" }""") }
-      "encode interval"  in { DataCodec.render(Data.Interval(Duration.parse("PT12H34M")))             must beRightDisjunction("""{ "$interval": "PT12H34M" }""") }
+      "encode null"      in { DataCodec.render(Data.Null)     must beSome("null") }
+      "encode true"      in { DataCodec.render(Data.True)     must beSome("true") }
+      "encode false"     in { DataCodec.render(Data.False)    must beSome("false") }
+      "encode int"       in { DataCodec.render(Data.Int(0))   must beSome("0") }
+      "encode dec"       in { DataCodec.render(Data.Dec(1.1)) must beSome("1.1") }
+      "encode dec with no fractional part" in { DataCodec.render(Data.Dec(2.0)) must beSome("2.0") }
+      "encode timestamp" in { DataCodec.render(Data.Timestamp(Instant.parse("2015-01-31T10:30:00Z"))) must beSome("""{ "$timestamp": "2015-01-31T10:30:00.000Z" }""") }
+      "encode date"      in { DataCodec.render(Data.Date(LocalDate.parse("2015-01-31")))              must beSome("""{ "$date": "2015-01-31" }""") }
+      "encode time"      in { DataCodec.render(Data.Time(LocalTime.parse("10:30:00.000")))            must beSome("""{ "$time": "10:30:00.000" }""") }
+      "encode interval"  in { DataCodec.render(Data.Interval(Duration.parse("PT12H34M")))             must beSome("""{ "$interval": "PT12H34M" }""") }
       "encode obj" in {
         // NB: more than 4, to verify order is preserved
         DataCodec.render(Data.Obj(ListMap("a" -> Data.Int(1), "b" -> Data.Int(2), "c" -> Data.Int(3), "d" -> Data.Int(4), "e" -> Data.Int(5)))) must
-          beRightDisjunction("""{ "a": 1, "b": 2, "c": 3, "d": 4, "e": 5 }""")
+          beSome("""{ "a": 1, "b": 2, "c": 3, "d": 4, "e": 5 }""")
       }
       "encode obj with leading '$'s" in {
         DataCodec.render(Data.Obj(ListMap("$a" -> Data.Int(1), "$date" -> Data.Timestamp(Instant.parse("2015-01-31T10:30:00Z"))))) must
-          beRightDisjunction("""{ "$obj": { "$a": 1, "$date": { "$timestamp": "2015-01-31T10:30:00Z" } } }""")
+          beSome("""{ "$obj": { "$a": 1, "$date": { "$timestamp": "2015-01-31T10:30:00.000Z" } } }""")
       }
       "encode obj with $obj" in {
         DataCodec.render(Data.Obj(ListMap("$obj" -> Data.Obj(ListMap("$obj" -> Data.Int(1)))))) must
-          beRightDisjunction("""{ "$obj": { "$obj": { "$obj": { "$obj": 1 } } } }""")
+          beSome("""{ "$obj": { "$obj": { "$obj": { "$obj": 1 } } } }""")
       }
-      "encode array"     in { DataCodec.render(Data.Arr(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beRightDisjunction("[ 0, 1, 2 ]") }
-      "encode set"       in { DataCodec.render(Data.Set(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beLeftDisjunction }
-      "encode binary"    in { DataCodec.render(Data.Binary.fromArray(Array[Byte](76, 77, 78, 79))) must beRightDisjunction("""{ "$binary": "TE1OTw==" }""") }
-      "encode objectId"  in { DataCodec.render(Data.Id("abc")) must beRightDisjunction("""{ "$oid": "abc" }""") }
-      "encode NA"        in { DataCodec.render(Data.NA) must beRightDisjunction("""{ "$na": null }""") }
+      "encode array"     in { DataCodec.render(Data.Arr(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beSome("[ 0, 1, 2 ]") }
+      "encode set"       in { DataCodec.render(Data.Set(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beNone }
+      "encode binary"    in { DataCodec.render(Data.Binary.fromArray(Array[Byte](76, 77, 78, 79))) must beSome("""{ "$binary": "TE1OTw==" }""") }
+      "encode objectId"  in { DataCodec.render(Data.Id("abc")) must beSome("""{ "$oid": "abc" }""") }
+      "encode NA"        in { DataCodec.render(Data.NA) must beNone }
     }
 
     "round-trip" >> prop { (data: Data) =>
       representable(data) ==> {
-        DataCodec.render(data).flatMap(DataCodec.parse) must beRightDisjunction(data)
+        roundTrip(data) must beSome(data.right[DataEncodingError])
       }
     }.flakyTest("with arg: Interval(PT-175468H-10M-0.6S). As far as I can tell, this is a problem with java.time.Instant which is not preserving the exact nature of the Instant object through calls to toString() and parse()")
 
@@ -85,7 +89,7 @@ class DataCodecSpecs extends quasar.Qspec {
       // These types get lost on the way through rendering and re-parsing:
 
       "re-parse very large Int value as Dec" in {
-        DataCodec.render(Data.Int(LargeInt)).flatMap(DataCodec.parse) must beRightDisjunction(Data.Dec(new java.math.BigDecimal(LargeInt.underlying)))
+        roundTrip(Data.Int(LargeInt)) must beSome(Data.Dec(new java.math.BigDecimal(LargeInt.underlying)).right[DataEncodingError])
       }
 
 
@@ -126,38 +130,38 @@ class DataCodecSpecs extends quasar.Qspec {
     "render" should {
       // NB: these tests verify that all the formatting matches our documentation
 
-      "encode null"      in { DataCodec.render(Data.Null)     must beRightDisjunction("null") }
-      "encode true"      in { DataCodec.render(Data.True)     must beRightDisjunction("true") }
-      "encode false"     in { DataCodec.render(Data.False)    must beRightDisjunction("false") }
-      "encode int"       in { DataCodec.render(Data.Int(0))   must beRightDisjunction("0") }
-      "encode dec"       in { DataCodec.render(Data.Dec(1.1)) must beRightDisjunction("1.1") }
-      "encode dec with no fractional part" in { DataCodec.render(Data.Dec(2.0)) must beRightDisjunction("2.0") }
-      "encode timestamp" in { DataCodec.render(Data.Timestamp(Instant.parse("2015-01-31T10:30:00Z"))) must beRightDisjunction("\"2015-01-31T10:30:00Z\"") }
-      "encode date"      in { DataCodec.render(Data.Date(LocalDate.parse("2015-01-31")))              must beRightDisjunction("\"2015-01-31\"") }
-      "encode time"      in { DataCodec.render(Data.Time(LocalTime.parse("10:30:00.000")))            must beRightDisjunction("\"10:30\"") }
-      "encode interval"  in { DataCodec.render(Data.Interval(Duration.parse("PT12H34M")))             must beRightDisjunction("\"PT12H34M\"") }
+      "encode null"      in { DataCodec.render(Data.Null)     must beSome("null") }
+      "encode true"      in { DataCodec.render(Data.True)     must beSome("true") }
+      "encode false"     in { DataCodec.render(Data.False)    must beSome("false") }
+      "encode int"       in { DataCodec.render(Data.Int(0))   must beSome("0") }
+      "encode dec"       in { DataCodec.render(Data.Dec(1.1)) must beSome("1.1") }
+      "encode dec with no fractional part" in { DataCodec.render(Data.Dec(2.0)) must beSome("2.0") }
+      "encode timestamp" in { DataCodec.render(Data.Timestamp(Instant.parse("2015-01-31T10:30:00Z"))) must beSome("\"2015-01-31T10:30:00Z\"") }
+      "encode date"      in { DataCodec.render(Data.Date(LocalDate.parse("2015-01-31")))              must beSome("\"2015-01-31\"") }
+      "encode time"      in { DataCodec.render(Data.Time(LocalTime.parse("10:30:00.000")))            must beSome("\"10:30\"") }
+      "encode interval"  in { DataCodec.render(Data.Interval(Duration.parse("PT12H34M")))             must beSome("\"PT12H34M\"") }
       "encode obj" in {
         // NB: more than 4, to verify order is preserved
         DataCodec.render(Data.Obj(ListMap("a" -> Data.Int(1), "b" -> Data.Int(2), "c" -> Data.Int(3), "d" -> Data.Int(4), "e" -> Data.Int(5)))) must
-          beRightDisjunction("""{ "a": 1, "b": 2, "c": 3, "d": 4, "e": 5 }""")
+          beSome("""{ "a": 1, "b": 2, "c": 3, "d": 4, "e": 5 }""")
       }
       "encode obj with leading '$'s" in {
         DataCodec.render(Data.Obj(ListMap("$a" -> Data.Int(1), "$date" -> Data.Timestamp(Instant.parse("2015-01-31T10:30:00Z"))))) must
-          beRightDisjunction("""{ "$a": 1, "$date": "2015-01-31T10:30:00Z" }""")
+          beSome("""{ "$a": 1, "$date": "2015-01-31T10:30:00Z" }""")
         }
-      "encode array"     in { DataCodec.render(Data.Arr(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beRightDisjunction("[ 0, 1, 2 ]") }
-      "encode set"       in { DataCodec.render(Data.Set(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beLeftDisjunction }
-      "encode binary"    in { DataCodec.render(Data.Binary.fromArray(Array[Byte](76, 77, 78, 79))) must beRightDisjunction("\"TE1OTw==\"") }
-      "encode empty binary" in { DataCodec.render(Data.Binary.fromArray(Array[Byte]())) must beRightDisjunction("\"\"") }
-      "encode objectId"  in { DataCodec.render(Data.Id("abc")) must beRightDisjunction("\"abc\"") }
-      "encode NA"        in { DataCodec.render(Data.NA) must beRightDisjunction("null") }
+      "encode array"     in { DataCodec.render(Data.Arr(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beSome("[ 0, 1, 2 ]") }
+      "encode set"       in { DataCodec.render(Data.Set(List(Data.Int(0), Data.Int(1), Data.Int(2)))) must beNone }
+      "encode binary"    in { DataCodec.render(Data.Binary.fromArray(Array[Byte](76, 77, 78, 79))) must beSome("\"TE1OTw==\"") }
+      "encode empty binary" in { DataCodec.render(Data.Binary.fromArray(Array[Byte]())) must beSome("\"\"") }
+      "encode objectId"  in { DataCodec.render(Data.Id("abc")) must beSome("\"abc\"") }
+      "encode NA"        in { DataCodec.render(Data.NA) must beNone }
     }
 
     "round-trip" >> prop { (data: Data) =>
       representable(data) ==> {
-        DataCodec.render(data).flatMap(DataCodec.parse) must beRightDisjunction(data)
+        roundTrip(data) must beSome(data.right[DataEncodingError])
       }
-    }
+    }.flakyTest("with arg: Interval(PT-175468H-10M-0.6S). As far as I can tell, this is a problem with java.time.Instant which is not preserving the exact nature of the Instant object through calls to toString() and parse()")
 
     "parse" should {
       // These types get inferred whenever a string matches the expected format:
@@ -165,42 +169,42 @@ class DataCodecSpecs extends quasar.Qspec {
       "re-parse Str as Timestamp" in {
         val ts = Data.Timestamp(Instant.now)
         val str = Data.Str(ts.value.toString)
-        DataCodec.render(str).flatMap(DataCodec.parse) must beRightDisjunction(ts)
+        roundTrip(str) must beSome(ts.right[DataEncodingError])
       }
 
       "re-parse Str as Date" in {
         val date = Data.Date(LocalDate.now)
         val str = Data.Str(date.value.toString)
-        DataCodec.render(str).flatMap(DataCodec.parse) must beRightDisjunction(date)
+        roundTrip(str) must beSome(date.right[DataEncodingError])
       }
 
       "re-parse Str as Time" in {
         val time = Data.Time(LocalTime.now)
         val str = Data.Str(time.value.toString)
-        DataCodec.render(str).flatMap(DataCodec.parse) must beRightDisjunction(time)
+        roundTrip(str) must beSome(time.right[DataEncodingError])
       }
 
       "re-parse Str as Interval" in {
         val interval = Data.Interval(Duration.ofSeconds(1))
         val str = Data.Str(interval.value.toString)
-        DataCodec.render(str).flatMap(DataCodec.parse) must beRightDisjunction(interval)
+        roundTrip(str) must beSome(interval.right[DataEncodingError])
       }
 
 
       // These types get lost on the way through rendering and re-parsing:
 
       "re-parse very large Int value as Dec" in {
-        DataCodec.render(Data.Int(LargeInt)).flatMap(DataCodec.parse) must beRightDisjunction(Data.Dec(new java.math.BigDecimal(LargeInt.underlying)))
+        roundTrip(Data.Int(LargeInt)) must beSome(Data.Dec(new java.math.BigDecimal(LargeInt.underlying)).right[DataEncodingError])
       }
 
       "re-parse Binary as Str" in {
         val binary = Data.Binary.fromArray(Array[Byte](0, 1, 2, 3))
-        DataCodec.render(binary).flatMap(DataCodec.parse) must beRightDisjunction(Data.Str("AAECAw=="))
+        roundTrip(binary) must beSome(Data.Str("AAECAw==").right[DataEncodingError])
       }
 
       "re-parse Id as Str" in {
         val id = Data.Id("abc")
-        DataCodec.render(id).flatMap(DataCodec.parse) must beRightDisjunction(Data.Str("abc"))
+        roundTrip(id) must beSome(Data.Str("abc").right[DataEncodingError])
       }
     }
   }

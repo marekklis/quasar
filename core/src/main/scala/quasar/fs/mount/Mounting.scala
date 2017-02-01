@@ -40,7 +40,7 @@ import quasar.fp.ski._
 import quasar.fs._
 import quasar.sql.Sql
 
-import matryoshka.Fix
+import matryoshka.data.Fix
 import monocle.Prism
 import monocle.std.{disjunction => D}
 import pathy._, Path._
@@ -100,10 +100,6 @@ object Mounting {
     /** The views mounted at paths having the given prefix. */
     def viewsHavingPrefix(dir: ADir): F[Set[AFile]] =
       rPathsHavingPrefix(dir).map(_.foldMap(_.toSet))
-
-    /** The filesystems mounted at paths having the given prefix. */
-    def fsHavingPrefix(dir: ADir): F[Set[ADir]] =
-      rPathsHavingPrefix(dir).map(_.foldMap(_.swap.toSet))
 
     /** Whether the given path refers to a mount. */
     def exists(path: APath): F[Boolean] =

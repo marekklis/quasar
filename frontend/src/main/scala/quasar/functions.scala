@@ -47,6 +47,22 @@ object DimensionalEffect {
   implicit val equal: Equal[DimensionalEffect] = Equal.equalA[DimensionalEffect]
 }
 
+final case class NullaryFunc
+  (val effect: DimensionalEffect,
+    val help: String,
+    val codomain: Func.Codomain,
+    val simplify: Func.Simplifier)
+    extends GenericFunc[nat._0] {
+  val domain = Sized[List]()
+  val typer0: Func.Typer[nat._0] = _ => Validation.success(codomain)
+  val untyper0: Func.Untyper[nat._0] = {
+    case ((funcDomain, _), _) => Validation.success(funcDomain)
+  }
+
+  def apply[A](): LP[A] =
+    applyGeneric(Sized[List]())
+}
+
 final case class UnaryFunc(
     val effect: DimensionalEffect,
     val help: String,
@@ -96,7 +112,7 @@ sealed abstract class GenericFunc[N <: Nat] {
   def untyper0: Func.Untyper[N]
 
   def applyGeneric[A](args: Func.Input[A, N]): LP[A] =
-    Invoke[A, N](this, args)
+    Invoke[N, A](this, args)
 
   final def untpe(tpe: Func.Codomain): Func.VDomain[N] =
     untyper0((domain, codomain), tpe)
@@ -141,9 +157,11 @@ trait GenericFuncInstances {
       case date.ExtractWeek               => "ExtractWeek"
       case date.ExtractYear               => "ExtractYear"
       case date.Date                      => "Date"
+      case date.Now                       => "Now"
       case date.Time                      => "Time"
       case date.Timestamp                 => "Timestamp"
       case date.Interval                  => "Interval"
+      case date.StartOfDay                => "StartOfDay"
       case date.TimeOfDay                 => "TimeOfDay"
       case date.ToTimestamp               => "ToTimestamp"
       case identity.Squash                => "Squash"
@@ -167,6 +185,7 @@ trait GenericFuncInstances {
       case relations.Or                   => "Or"
       case relations.Not                  => "Not"
       case relations.Cond                 => "Cond"
+      case set.Sample                     => "Sample"
       case set.Take                       => "Take"
       case set.Drop                       => "Drop"
       case set.Range                      => "Range"
@@ -232,8 +251,10 @@ object Func {
     * typer.
     */
   trait Simplifier {
-    def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]):
-        Option[LP[T[LP]]]
+    def apply[T]
+      (orig: LP[T])
+      (implicit TR: Recursive.Aux[T, LP], TC: Corecursive.Aux[T, LP])
+        : Option[LP[T]]
   }
 
   type Input[A, N <: Nat] = Sized[List[A], N]

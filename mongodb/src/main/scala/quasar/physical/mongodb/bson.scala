@@ -21,13 +21,13 @@ import quasar.fp._
 import quasar.javascript._
 import quasar.jscore, jscore.JsFn
 
+import java.time.Instant
 import scala.Any
 import scala.collection.JavaConverters._
 
 import monocle.Prism
 import org.bson._
 import org.bson.types
-import java.time.Instant
 import scalaz._, Scalaz._
 
 /**
@@ -48,7 +48,7 @@ object Bson {
     case arr:  BsonArray             => Arr(arr.getValues.asScala.toList ∘ fromRepr)
     case bin:  BsonBinary            => Binary.fromArray(bin.getData)
     case bool: BsonBoolean           => Bool(bool.getValue)
-    case dt:   BsonDateTime          => Date(Instant.ofEpochMilli(dt.getValue))
+    case dt:   BsonDateTime          => Date(dt.getValue)
     case doc:  BsonDocument          => Doc(doc.asScala.toList.toListMap ∘ fromRepr)
     case dub:  BsonDouble            => Dec(dub.doubleValue)
     case i32:  BsonInt32             => Int32(i32.intValue)
@@ -60,7 +60,7 @@ object Bson {
     case rex:  BsonRegularExpression => Regex(rex.getPattern, rex.getOptions)
     case str:  BsonString            => Text(str.getValue)
     case sym:  BsonSymbol            => Symbol(sym.getSymbol)
-    case tms:  BsonTimestamp         => Timestamp.fromInstant(Instant.ofEpochSecond(tms.getTime.toLong), tms.getInc)
+    case tms:  BsonTimestamp         => Timestamp(tms.getTime, tms.getInc)
     case _:    BsonUndefined         => Undefined
       // NB: These types we can’t currently translate back to Bson, but we don’t
       //     expect them to appear.
@@ -147,11 +147,21 @@ object Bson {
     def repr = new BsonBoolean(value)
     def toJs = Js.Bool(value)
   }
-  final case class Date(value: Instant) extends Bson {
-    def repr = new BsonDateTime(value.toEpochMilli)
-    def toJs =
-      Js.Call(Js.Ident("ISODate"), List(Js.Str(value.toString)))
+  /** NB: Can’t use `Instant`, because it encodes values outside the range of
+    *     Bson DateTimes.
+    */
+  final case class Date(millis: Long) extends Bson {
+    def repr = new BsonDateTime(millis)
+    def toJs = Js.Call(Js.Ident("ISODate"), List(Js.Str(Instant.ofEpochMilli(millis).toString)))
   }
+  object Date {
+    val minInstant = Instant.ofEpochMilli(Long.MinValue)
+    val maxInstant = Instant.ofEpochMilli(Long.MaxValue)
+    def fromInstant(inst: Instant) =
+      (minInstant.compareTo(inst) <= 0 && inst.compareTo(maxInstant) <= 0)
+        .option(Date(inst.toEpochMilli))
+  }
+
   final case object Null extends Bson {
     def repr = new BsonNull
     override def toJs = Js.Null
@@ -199,11 +209,7 @@ object Bson {
     def repr = new BsonTimestamp(epochSecond, ordinal)
     def toJs = Js.Call(Js.Ident("Timestamp"),
       List(Js.num(epochSecond.toLong), Js.num(ordinal.toLong)))
-    override def toString = "Timestamp(" + Instant.ofEpochSecond(epochSecond.toLong) + ", " + ordinal + ")"
-  }
-  object Timestamp {
-    def fromInstant(instant: Instant, ordinal: Int): Timestamp =
-      Timestamp((instant.toEpochMilli/1000).toInt, ordinal)
+    override def toString = s"Timestamp(${Instant.ofEpochSecond(epochSecond.toLong)}, ${ordinal.shows})"
   }
   final case object MinKey extends Bson {
     def repr = new BsonMinKey()
@@ -248,9 +254,7 @@ sealed trait BsonField {
   def asField : String = "$" + asText
   def asVar   : String = "$$" + asText
 
-  def bson      = Bson.Text(asText)
-  def bsonField = Bson.Text(asField)
-  def bsonVar   = Bson.Text(asVar)
+  def bson = Bson.Text(asText)
 
   import BsonField._
 

@@ -34,8 +34,6 @@ sealed trait OS {
   def isWin: Boolean = fold(true, false, false)
 
   def isMac: Boolean = fold(false, true, false)
-
-  def isPosix: Boolean = fold(false, false, true)
 }
 
 object OS {

@@ -17,10 +17,10 @@
 package quasar.qscript
 
 import quasar.Predef._
-import quasar.contrib.matryoshka._
 import quasar.fp._
 
 import matryoshka._
+import matryoshka.patterns.CoEnv
 import simulacrum.typeclass
 import scalaz._, Scalaz._
 
@@ -71,8 +71,10 @@ object Mergeable {
     }
 
   implicit def coproduct[T[_[_]], F[_], G[_]](
-    implicit F: Mergeable.Aux[T, F], G: Mergeable.Aux[T, G],
-             FC: F :<: Coproduct[F, G, ?], GC: G :<: Coproduct[F, G, ?]):
+    implicit F: Mergeable.Aux[T, F],
+             G: Mergeable.Aux[T, G],
+             FC: F :<: Coproduct[F, G, ?],
+             GC: G :<: Coproduct[F, G, ?]):
       Mergeable.Aux[T, Coproduct[F, G, ?]] =
     new Mergeable[Coproduct[F, G, ?]] {
       type IT[F[_]] = T[F]
@@ -92,6 +94,29 @@ object Mergeable {
             G.mergeSrcs(left, right, right1, right2).map {
               case SrcMerge(src, left, right) =>
                 SrcMerge(GC.inj(src), left, right)
+            }
+          case (_, _) => None
+        }
+    }
+
+  implicit def coenv[T[_[_]], F[_]](
+    implicit F: Mergeable.Aux[T, F]):
+      Mergeable.Aux[T, CoEnv[Hole, F, ?]] =
+    new Mergeable[CoEnv[Hole, F, ?]] {
+      type IT[F[_]] = T[F]
+
+      def mergeSrcs(
+        left: FreeMap[IT],
+        right: FreeMap[IT],
+        cp1: CoEnv[Hole, F, ExternallyManaged],
+        cp2: CoEnv[Hole, F, ExternallyManaged]) =
+        (cp1.run, cp2.run) match {
+          case (-\/(hole), -\/(_)) =>
+            SrcMerge(CoEnv(hole.left[F[ExternallyManaged]]), left, right).some
+          case (\/-(left1), \/-(right1)) =>
+            F.mergeSrcs(left, right, left1, right1).map {
+              case SrcMerge(s, l, r) =>
+                SrcMerge(CoEnv(s.right[Hole]), l, r)
             }
           case (_, _) => None
         }

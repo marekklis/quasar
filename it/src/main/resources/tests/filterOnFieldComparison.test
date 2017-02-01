@@ -1,17 +1,13 @@
 {
     "name": "filter on field comparison",
     "backends": {
-        "mongodb_2_6":       "pending",
-        "mongodb_3_0":       "pending",
         "mongodb_read_only": "pending",
-        "mongodb_3_2":       "pending",
-        "postgresql":        "pending",
-        "couchbase":         "skip",
-        "marklogic":         "skip"
+        "postgresql":        "pending"
     },
     "data": "zips.data",
-    "query": "select * from zips where pop < loc[1] limit 10",
-    "predicate": "containsExactly",
+    "query": "select * from zips where pop < loc[1] order by _id limit 10",
+    "predicate": "equalsExactly",
+    "ignoreFieldOrder": ["marklogic_json"],
     "expected": [
         { "_id": "01338", "city": "BUCKLAND",        "loc": [-72.764124, 42.615174], "pop": 16, "state": "MA" },
         { "_id": "02163", "city": "CAMBRIDGE",       "loc": [-71.141879, 42.364005], "pop": 0,  "state": "MA" },

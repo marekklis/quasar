@@ -1,21 +1,26 @@
 {
-  "name": "cross join with conditions that must be pushed ahead of the join (or else the join explodes, taking several minutes to complete)",
+    "name": "cross join with conditions that must be pushed ahead of the join (or else the join explodes, taking several minutes to complete)",
 
-  "backends": {
-    "mongodb_read_only": "pending",
-    "postgresql":        "pending",
-    "marklogic":         "skip",
-    "couchbase":         "skip"
-  },
+    "backends": {
+        "couchbase":         "skip",
+        "mongodb_read_only": "pending",
+        "mongodb_q_3_2": "pending",
+        "postgresql":        "pending",
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
+    },
 
-  "data": "../largeZips.data",
+    "data": ["../largeZips.data", "../zips.data"],
 
-  "query": "select a.city as a, b.city as b, b.pop - a.pop as diff
-            from `../largeZips` as a, `../largeZips` as b
-            where a._id like \"80301\" and b._id like \"90277\"",
+    "query": "select a.city as a, b.city as b, b.pop - a.pop as diff
+            from `../zips` as a, `../largeZips` as b
+            where a._id like \"80301\" and b._id like \"95928\"",
 
-  "predicate": "equalsExactly",
-  "expected": [
-    { "a": "BOULDER", "b": "REDONDO BEACH", "diff": 14928 }
-  ]
+    "predicate": "equalsExactly",
+
+    "ignoreFieldOrder": ["marklogic_json"],
+
+    "expected": [
+        { "a": "BOULDER", "b": "CHICO", "diff": 9278 }
+    ]
 }

@@ -21,7 +21,7 @@ import quasar.fp.ski._
 
 import argonaut._
 import _root_.pathy.Path, Path._
-import scalaz._, Scalaz._
+import _root_.scalaz._, Scalaz._
 
 package object pathy {
   type AbsPath[T] = Path[Abs,T,Sandboxed]
@@ -33,11 +33,7 @@ package object pathy {
   type RFile = RelFile[Sandboxed]
   type APath = AbsPath[scala.Any]
   type RPath = RelPath[scala.Any]
-
-  type FilePath[B] = Path[B,File,Sandboxed]
-  type DirPath[B]  = Path[B,Dir, Sandboxed]
-  type FPath = FilePath[scala.Any]
-  type DPath = DirPath[scala.Any]
+  type FPath = Path[scala.Any,File,Sandboxed]
 
   type PathSegment = DirName \/ FileName
 
@@ -76,12 +72,12 @@ package object pathy {
         apath.relativeTo(prefix).fold(apath)(rootDir </> _)
     }
 
-  /** Returns the first named segment of the given relative path. */
-  def firstSegmentName(f: RPath): Option[PathSegment] =
+  /** Returns the first named segment of the given path. */
+  def firstSegmentName(p: Path[_,_,_]): Option[PathSegment] =
     flatten(none, none, none,
       n => DirName(n).left.some,
       n => FileName(n).right.some,
-      f).toIList.unite.headOption
+      p).toIList.unite.headOption
 
   def prettyPrint(path: Path[_,_,_]): String =
     refineType(path).fold(

@@ -17,7 +17,7 @@
 package quasar.fs
 
 import quasar.Predef._
-import quasar.{BackendName, Data, TestConfig}
+import quasar.{BackendCapability, BackendName, BackendRef, Data, TestConfig}
 import quasar.contrib.pathy._
 import quasar.fp.{TaskRef, reflNT}
 import quasar.fp.eitherT._
@@ -34,7 +34,7 @@ import eu.timepit.refined.auto._
 import monocle.Optional
 import monocle.function.Index
 import monocle.std.vector._
-import org.specs2.specification.core.Fragment
+import org.specs2.specification.core.{Fragment, Fragments}
 import org.specs2.execute.{Failure => _, _}
 import pathy.Path._
 import scalaz.{EphemeralStream => EStream, Optional => _, Failure => _, _}, Scalaz._
@@ -50,7 +50,7 @@ import scalaz.stream.Process
   *       filesystems would run concurrently.
   */
 abstract class FileSystemTest[S[_]](
-  val fileSystems: Task[IList[FileSystemUT[S]]]
+  val fileSystems: Task[IList[SupportedFs[S]]]
 ) extends quasar.Qspec {
 
   sequential
@@ -59,14 +59,24 @@ abstract class FileSystemTest[S[_]](
   type FsTask[A] = FileSystemErrT[Task, A]
   type Run       = F ~> Task
 
-  def fileSystemShould(examples: FileSystemUT[S] => Fragment): Unit =
-    fileSystems.map(_ traverse_[Id] { fs =>
-      s"${fs.name.name} FileSystem" should examples(fs)
+  def fileSystemShould(examples: FileSystemUT[S] => Fragment): Fragments =
+    fileSystems.map { fss =>
+      Fragments.foreach(fss.toList)(fs =>
+        fs.impl.map { f =>
+          s"${fs.ref.name.shows} FileSystem" >>
+            Fragments(examples(f), step(f.close.unsafePerformSync))
+        } getOrElse {
+          val confParamName = TestConfig.backendConfName(fs.ref.name)
+          Fragments(s"${fs.ref.name.shows} FileSystem" >> skipped(s"No connection uri found to test this FileSystem, set config parameter $confParamName in '${TestConfig.confFile}' in order to do so"))
+        })
+    }.unsafePerformSync
 
-      step(fs.close.unsafePerformSync)
-
-      ()
-    }).unsafePerformSync
+  /** Returns the given result if the filesystem supports the given capabilities or `Skipped` otherwise. */
+  def ifSupports[A: AsResult](fs: FileSystemUT[S], capability: BackendCapability, capabilities: BackendCapability*)(a: => A): Result =
+    NonEmptyList(capability, capabilities: _*)
+      .traverse_(c => fs.supports(c).fold(().successNel[BackendCapability], c.failureNel))
+      .as(AsResult(a))
+      .valueOr(cs => skipped(s"Doesn't support: ${cs.map(_.shows).intercalate(", ")}"))
 
   def runT(run: Run): FileSystemErrT[F, ?] ~> FsTask =
     Hoist[FileSystemErrT].hoist(run)
@@ -120,9 +130,9 @@ object FileSystemTest {
 
   //--- FileSystems to Test ---
 
-  def allFsUT: Task[IList[FileSystemUT[FileSystem]]] =
+  def allFsUT: Task[IList[SupportedFs[FileSystem]]] =
     (localFsUT |@| externalFsUT) { (loc, ext) =>
-      (loc ::: ext) map (ut => ut.contramapF(chroot.fileSystem[FileSystem](ut.testDir)))
+      (loc ::: ext) map (sf => sf.copy(impl = sf.impl.map(ut => ut.contramapF(chroot.fileSystem[FileSystem](ut.testDir)))))
     }
 
   def fsTestConfig(fsType: FileSystemType, fsDef: FileSystemDef[Free[filesystems.Eff, ?]])
@@ -132,21 +142,24 @@ object FileSystemTest {
   }
 
   def externalFsUT = TestConfig.externalFileSystems {
-    fsTestConfig(mongodb.fs.MongoDBFsType,  mongodb.fs.mongoDbFileSystemDef) orElse
-    fsTestConfig(skeleton.fs.FsType,        skeleton.fs.definition)          orElse
-    fsTestConfig(postgresql.fs.FsType,      postgresql.fs.definition)        orElse
-    fsTestConfig(sparkcore.fs.local.FsType, sparkcore.fs.local.definition)   orElse
-    fsTestConfig(sparkcore.fs.hdfs.FsType,  sparkcore.fs.hdfs.definition)    orElse
+    fsTestConfig(couchbase.fs.FsType,       couchbase.fs.definition)         orElse
     fsTestConfig(marklogic.fs.FsType,       marklogic.fs.definition(10000L)) orElse
-    fsTestConfig(couchbase.fs.FsType,       couchbase.fs.definition)
+    fsTestConfig(mongodb.fs.FsType,         mongodb.fs.definition)           orElse
+    fsTestConfig(mongodb.fs.QScriptFsType,  mongodb.fs.qscriptDefinition)    orElse
+    fsTestConfig(postgresql.fs.FsType,      postgresql.fs.definition)        orElse
+    fsTestConfig(skeleton.fs.FsType,        skeleton.fs.definition)          orElse
+    fsTestConfig(sparkcore.fs.hdfs.FsType,  sparkcore.fs.hdfs.definition)    orElse
+    fsTestConfig(sparkcore.fs.local.FsType, sparkcore.fs.local.definition)
   }
 
-  def localFsUT: Task[IList[FileSystemUT[FileSystem]]] =
-    IList(
-      inMemUT,
-      hierarchicalUT,
-      nullViewUT
-    ).sequence
+  def localFsUT: Task[IList[SupportedFs[FileSystem]]] =
+    (inMemUT |@| hierarchicalUT |@| nullViewUT) { (mem, hier, nullUT) =>
+      IList(
+        SupportedFs(mem.ref, mem.some),
+        SupportedFs(hier.ref, hier.some),
+        SupportedFs(nullUT.ref, nullUT.some)
+      )
+    }
 
   def nullViewUT: Task[FileSystemUT[FileSystem]] =
     (
@@ -177,8 +190,9 @@ object FileSystemTest {
           mem.testInterp)
 
       val fs = foldMapNT(memPlus) compose view.fileSystem[ViewFileSystem]
+      val ref = BackendRef.name.set(BackendName("No-view"))(mem.ref)
 
-      FileSystemUT(BackendName("No-view"), fs, fs, mem.testDir, mem.close)
+      FileSystemUT(ref, fs, fs, mem.testDir, mem.close)
     }
 
   def hierarchicalUT: Task[FileSystemUT[FileSystem]] = {
@@ -190,7 +204,7 @@ object FileSystemTest {
 
     (interpretHfsIO |@| inMemUT)((f, mem) =>
       FileSystemUT(
-        BackendName("hierarchical"),
+        BackendRef.name.set(BackendName("hierarchical"))(mem.ref),
         fs(f, mem.testInterp),
         fs(f, mem.setupInterp),
         mntDir,
@@ -198,8 +212,10 @@ object FileSystemTest {
   }
 
   def inMemUT: Task[FileSystemUT[FileSystem]] = {
+    val ref = BackendRef(BackendName("in-memory"), ISet singleton BackendCapability.write())
+
     InMemory.runStatefully(InMemory.InMemState.empty)
       .map(_ compose InMemory.fileSystem)
-      .map(f => FileSystemUT(BackendName("in-memory"), f, f, rootDir, ().point[Task]))
+      .map(f => FileSystemUT(ref, f, f, rootDir, ().point[Task]))
   }
 }

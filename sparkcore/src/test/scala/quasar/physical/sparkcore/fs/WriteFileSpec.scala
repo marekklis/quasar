@@ -172,7 +172,7 @@ class WriteFileSpec extends quasar.Qspec {
     }
   }
 
-  private def withTempDir[C](createIt: Boolean = true, withTailDir: List[String] = Nil)
+  private def withTempDir[C](createIt: Boolean, withTailDir: List[String] = Nil)
     (run: ADir => Task[C]): C = {
 
     def genDirPath: Task[ADir] = Task.delay {

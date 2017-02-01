@@ -28,7 +28,6 @@ import quasar.physical.mongodb.fs.bsoncursor._
 import quasar.physical.mongodb.fs.fsops._
 
 import com.mongodb.async.client.MongoClient
-import matryoshka.Recursive.ops._
 import pathy.Path.{depth, dirName}
 import scalaz._, Scalaz._
 import scalaz.concurrent.Task
@@ -37,7 +36,7 @@ import scalaz.stream.{Writer => _, _}
 package object fs {
   import FileSystemDef.{DefinitionError, DefErrT}
 
-  val MongoDBFsType = FileSystemType("mongodb")
+  val FsType = FileSystemType("mongodb")
 
   final case class DefaultDb(run: DatabaseName)
 
@@ -48,7 +47,7 @@ package object fs {
 
   final case class TmpPrefix(run: String) extends scala.AnyVal
 
-  def mongoDbFileSystem[S[_]](
+  def fileSystem[S[_]](
     client: MongoClient,
     defDb: Option[DefaultDb]
   )(implicit
@@ -72,17 +71,17 @@ package object fs {
         mfile compose managefile.interpret))
   }
 
-  def mongoDbFileSystemDef[S[_]](implicit
+  def definition[S[_]](implicit
     S0: Task :<: S,
     S1: PhysErr :<: S
   ): FileSystemDef[Free[S, ?]] = FileSystemDef.fromPF[Free[S, ?]] {
-    case (MongoDBFsType, uri) =>
+    case (FsType, uri) =>
       type M[A] = Free[S, A]
       for {
         client <- asyncClientDef[S](uri)
         defDb  <- free.lift(findDefaultDb.run(client)).into[S].liftM[DefErrT]
         fs     <- EitherT[M, DefinitionError, FileSystem ~> M](free.lift(
-                    mongoDbFileSystem[S](client, defDb)
+                    fileSystem[S](client, defDb)
                       .leftMap(_.right[NonEmptyList[String]])
                       .run
                   ).into[S])
@@ -90,7 +89,9 @@ package object fs {
       } yield FileSystemDef.DefinitionResult[M](fs, close)
   }
 
-  def mongoDbQScriptFileSystem[S[_]](
+  val QScriptFsType = FileSystemType("mongodbq")
+
+  def qscriptFileSystem[S[_]](
     client: MongoClient,
     defDb: Option[DefaultDb]
   )(implicit
@@ -114,17 +115,17 @@ package object fs {
         mfile compose managefile.interpret))
   }
 
-  def mongoDbQScriptFileSystemDef[S[_]](implicit
+  def qscriptDefinition[S[_]](implicit
     S0: Task :<: S,
     S1: PhysErr :<: S
   ): FileSystemDef[Free[S, ?]] = FileSystemDef.fromPF[Free[S, ?]] {
-    case (FileSystemType("mongodbq"), uri) =>
+    case (QScriptFsType, uri) =>
       type M[A] = Free[S, A]
       for {
         client <- asyncClientDef[S](uri)
         defDb  <- free.lift(findDefaultDb.run(client)).into[S].liftM[DefErrT]
         fs     <- EitherT[M, DefinitionError, FileSystem ~> M](free.lift(
-                    mongoDbQScriptFileSystem[S](client, defDb)
+                    qscriptFileSystem[S](client, defDb)
                       .leftMap(_.right[NonEmptyList[String]])
                       .run
                   ).into[S])

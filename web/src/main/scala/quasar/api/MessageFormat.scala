@@ -18,13 +18,12 @@ package quasar.api
 
 import quasar.Predef._
 
-import quasar.{DataEncodingError, Data, DataCodec}
+import quasar.{Data, DataCodec}
 import quasar.csv._
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.main.Prettify
 
-import argonaut.EncodeJson
 import org.http4s._
 import org.http4s.parser.HttpHeaderParser
 import org.http4s.headers._
@@ -94,8 +93,7 @@ object MessageFormat {
       format.mediaType.withExtensions(extensions)
     }
     override def encode[F[_]](data: Process[F, Data]): Process[F, String] = {
-      val encodedData =
-        data.map(DataCodec.render(_)(mode.codec).fold(EncodeJson.of[DataEncodingError].encode(_).toString, ι))
+      val encodedData = data.map(DataCodec.render(_)(mode.codec)).unite
       format match {
         case JsonFormat.SingleArray =>
           Process.emit("[" + LineSep) ++ encodedData.intersperse("," + LineSep) ++ Process.emit(LineSep + "]" + LineSep)
@@ -207,9 +205,8 @@ object MessageFormat {
   // FIXME: I don’t know why this is triggering here.
   @SuppressWarnings(Array("org.wartremover.warts.NoNeedForMonad"))
   def fromMediaType(mediaType: MediaRange): Option[MessageFormat] = {
-    val disposition = mediaType.extensions.get("disposition").flatMap { str =>
-      HttpHeaderParser.CONTENT_DISPOSITION(str).toOption
-    }
+    val disposition = mediaType.extensions.get("disposition").flatMap(str =>
+      HttpHeaderParser.CONTENT_DISPOSITION(str).toOption)
     if (mediaType satisfies Csv.mediaType) {
       def toChar(str: String): Option[Char] = str.toList match {
         case c :: Nil => Some(c)

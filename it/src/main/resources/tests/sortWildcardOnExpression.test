@@ -1,16 +1,13 @@
 {
     "name": "sort wildcard on expression",
     "backends": {
-        "mongodb_2_6":       "pending",
-        "mongodb_3_0":       "pending",
         "mongodb_read_only": "pending",
-        "mongodb_3_2":       "pending",
-        "postgresql":        "pending",
-        "couchbase":         "skip"
+        "postgresql":        "pending"
     },
     "data": "largeZips.data",
     "query": "select * from largeZips order by pop/10 desc",
     "predicate": "equalsInitial",
+    "ignoreFieldOrder": ["marklogic_json"],
     "expected": [
         {"_id": "60623", "city": "CHICAGO",      "loc": [ -87.7157,   41.849015], "pop": 112047.0, "state": "IL"},
         {"_id": "11226", "city": "BROOKLYN",     "loc": [ -73.956985, 40.646694], "pop": 111396.0, "state": "NY"},

@@ -199,14 +199,6 @@ object MongoDbIO {
         .map(r => r.wasAcknowledged option r.getInsertedCount))
   }
 
-  /** Returns the results of executing the map-reduce job described by `cfg`
-    * on the documents from `src`.
-    */
-  def mapReduced(src: Collection, cfg: MapReduce): Process[MongoDbIO, BsonDocument] =
-    mapReduceIterable(src, cfg)
-      .liftM[Process]
-      .flatMap(iterableToProcess)
-
   /** Executes the map-reduce job described by `cfg`, sourcing documents from
     * `src` and writing the output to `dst`.
     */

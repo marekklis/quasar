@@ -17,12 +17,11 @@
 package quasar.physical.mongodb
 
 import quasar.Predef._
-import quasar.fp._
 import quasar._
+import quasar.fp._
 import quasar.javascript._
 import quasar.jscore
 
-import java.time._
 import scalaz._, Scalaz._
 
 class BsonSpecs extends quasar.Qspec {
@@ -115,8 +114,8 @@ object BsonGen {
     arbitrary[Double].map(Dec.apply),
     listOf(arbitrary[Byte]).map(bytes => Binary.fromArray(bytes.toArray)),
     listOfN(12, arbitrary[Byte]).map(bytes => ObjectId.fromArray(bytes.toArray)),
-    const(Date(Instant.now)),
-    const(Timestamp.fromInstant(Instant.now, 0)),
+    const(Date(0)),
+    const(Timestamp(0, 0)),
     const(Regex("a.*", "")),
     const(JavaScript(Js.Null)),
     const(JavaScriptScope(Js.Null, ListMap.empty)),

@@ -1,0 +1,1 @@
+- ServiceSpec not fail when no env vars are set.

@@ -1,11 +1,12 @@
 {
-  "name": "count distinct *",
-  "backends": {
-    "mongodb_read_only": "pending",
-    "postgresql":        "pending"
-  },
-  "data": "olympics.data",
-  "query": "select count(distinct *) as cnt from olympics",
-  "predicate": "equalsExactly",
-  "expected": [{ "cnt": 2304 }]
+    "name": "count distinct *",
+    "backends": {
+        "mongodb_read_only": "pending",
+        "mongodb_q_3_2":     "pending",
+        "postgresql":        "pending"
+    },
+    "data": "olympics.data",
+    "query": "select count(distinct *) as cnt from olympics",
+    "predicate": "containsExactly",
+    "expected": [{ "cnt": 2304 }]
 }

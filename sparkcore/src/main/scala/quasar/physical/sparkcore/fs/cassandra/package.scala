@@ -35,27 +35,30 @@ import scalaz.concurrent.Task
 
 package object cassandra {
 
-	import corequeryfile.RddState
+  import corequeryfile.RddState
 
-	val FsType = FileSystemType("spark-cassandra")
+  val FsType = FileSystemType("spark-cassandra")
 
-	type EffM1[A] = Coproduct[KeyValueStore[ResultHandle, RddState, ?], Read[SparkContext, ?], A]
+  type EffM1[A] = Coproduct[KeyValueStore[ResultHandle, RddState, ?], Read[SparkContext, ?], A]
   type Eff0[A] = Coproduct[KeyValueStore[ReadHandle, SparkCursor, ?], EffM1, A]
   type Eff1[A] = Coproduct[Task, Eff0, A]
   type Eff2[A] = Coproduct[PhysErr, Eff1, A]
   type Eff[A]  = Coproduct[MonotonicSeq, Eff2, A]
 
-	final case class SparkFSConf(sparkConf: SparkConf, prefix: ADir)
+  final case class SparkFSConf(sparkConf: SparkConf, prefix: ADir)
 
-  def parseUri(uri: ConnectionUri): DefinitionError \/ SparkFSConf = {
+  val parseUri: ConnectionUri => DefinitionError \/ (SparkConf, SparkFSConf) =
+  (uri: ConnectionUri) => {
 
-    def error(msg: String): DefinitionError \/ SparkFSConf =
-      NonEmptyList(msg).left[EnvironmentError].left[SparkFSConf]
+    def error(msg: String): DefinitionError \/ (SparkConf, SparkFSConf) =
+      NonEmptyList(msg).left[EnvironmentError].left[(SparkConf, SparkFSConf)]
 
-    def forge(master: String, cassandraHost: String, rootPath: String): DefinitionError \/ SparkFSConf =
+    def forge(master: String, cassandraHost: String, rootPath: String): DefinitionError \/ (SparkConf, SparkFSConf) =
       posixCodec.parseAbsDir(rootPath)
-        .map { prefix =>
-        SparkFSConf(new SparkConf().setMaster(master).setAppName("quasar").set("spark.cassandra.connection.host", cassandraHost), sandboxAbs(prefix))
+        .map { prefix => {
+          val sparkConf = new SparkConf().setMaster(master).setAppName("quasar").set("spark.cassandra.connection.host", cassandraHost)
+          (sparkConf, SparkFSConf(sparkConf, sandboxAbs(prefix)))
+        }
       }.fold(error(s"Could not extrat a path from $rootPath"))(_.right[DefinitionError])
 
     uri.value.split('|').toList match {
@@ -66,16 +69,14 @@ package object cassandra {
     }
   }
 
-  final case class SparkCassandraFSDef[S[_]](run: Free[Eff, ?] ~> Free[S, ?], close: Free[S, Unit])
-
   private def fetchSparkCoreJar: Task[String] = Task.delay {
     sys.env("QUASAR_HOME") + "/sparkcore.jar"
   }
 
-  private def sparkFsDef[S[_]](sparkConf: SparkConf)(implicit
+  def sparkFsDef[S[_]](implicit
     S0: Task :<: S,
     S1: PhysErr :<: S
-  ): Free[S, SparkCassandraFSDef[S]] = {
+  ): SparkConf => Free[S, SparkFSDef[Eff, S]] = (sparkConf: SparkConf) => {
 
     val genSc = fetchSparkCoreJar.map { jar => 
       val sc = new SparkContext(sparkConf)
@@ -96,7 +97,7 @@ package object cassandra {
       (KeyValueStore.impl.fromTaskRef[ResultHandle, RddState](rddStates) andThen injectNT[Task, S]) :+:
       (Read.constant[Task, SparkContext](sc) andThen injectNT[Task, S])
 
-      SparkCassandraFSDef(mapSNT[Eff, S](interpreter), lift(Task.delay(sc.stop())).into[S])
+      SparkFSDef(mapSNT[Eff, S](interpreter), lift(Task.delay(sc.stop())).into[S])
     }).into[S]
   }
 
@@ -106,20 +107,9 @@ package object cassandra {
       writefile.chrooted[Eff](sparkFsConf.prefix),
       managefile.chrooted[Eff](sparkFsConf.prefix))
 
-	def definition[S[_]](implicit S0: Task :<: S, S1: PhysErr :<: S):
-      FileSystemDef[Free[S, ?]] =
-    FileSystemDef.fromPF {
-      case (FsType, uri) =>
-        for {
-          sparkFsConf <- EitherT(parseUri(uri).point[Free[S, ?]])
-          res <- {
-            sparkFsDef(sparkFsConf.sparkConf).map {
-              case SparkCassandraFSDef(run, close) =>
-                FileSystemDef.DefinitionResult[Free[S, ?]](
-                  fsInterpret(sparkFsConf) andThen run,
-                  close)
-            }.liftM[DefErrT]
-          }
-        }  yield res
-    }
+  def definition[S[_]](implicit
+    S0: Task :<: S, S1: PhysErr :<: S
+  ): FileSystemDef[Free[S, ?]] =
+    quasar.physical.sparkcore.fs.definition[Eff, S, SparkFSConf](FsType, parseUri, sparkFsDef, fsInterpret)
+
 }

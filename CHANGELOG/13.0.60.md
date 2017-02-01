@@ -1,0 +1,1 @@
+- Remove unused array elements from qscript arrays.

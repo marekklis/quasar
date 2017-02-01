@@ -1,0 +1,25 @@
+{
+    "name": "flatten array on the left with unflattened field",
+    "backends": {
+        "couchbase": "skip",
+        "mongodb_q_3_2": "pending",
+        "postgresql": "pending",
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
+    },
+    "data": "zips.data",
+    "query": "SELECT loc[*] as coord, _id as zip FROM zips",
+    "predicate": "containsAtLeast",
+    "ignoreFieldOrder": ["marklogic_json"],
+    "expected": [
+        {"coord": -72.622739, "zip": "01001"},
+        {"coord": 42.070206,  "zip": "01001"},
+        {"coord": -72.51565,  "zip": "01002"},
+        {"coord": 42.377017,  "zip": "01002"},
+        {"coord": -72.108354, "zip": "01005"},
+        {"coord": 42.409698,  "zip": "01005"},
+        {"coord": -72.410953, "zip": "01007"},
+        {"coord": 42.275103,  "zip": "01007"},
+        {"coord": -72.936114, "zip": "01008"},
+        {"coord": 42.182949,  "zip": "01008"}]
+}

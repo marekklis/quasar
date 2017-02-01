@@ -17,16 +17,25 @@
 package quasar.fs
 
 import quasar.Predef._
-import quasar.BackendName
+import quasar.{BackendCapability, BackendRef}
 import quasar.contrib.pathy._
 import quasar.fp.free, free._
 
 import scalaz._
 import scalaz.concurrent.Task
 
+
+final case class SupportedFs[S[_]](
+  ref: BackendRef,
+  impl: Option[FileSystemUT[S]]
+) {
+  def liftIO: SupportedFs[Coproduct[Task, S, ?]] =
+    copy(impl = impl.map(_.liftIO))
+}
+
 /** FileSystem Under Test
   *
-  * @param name the name of the filesystem
+  * @param ref description of the filesystem
   * @param testInterp an interpreter of the filesystem into the `Task` monad
   * @param setupInterp a second interpreter which has the ability to insert
   *   and otherwise write to the filesystem, even if `testInterp` does not
@@ -36,7 +45,7 @@ import scalaz.concurrent.Task
   *   ever run, but it's safe to call it either way.
   */
 final case class FileSystemUT[S[_]](
-  name:        BackendName,
+  ref:         BackendRef,
   testInterp:  S ~> Task,
   setupInterp: S ~> Task,
   testDir:     ADir,
@@ -45,20 +54,23 @@ final case class FileSystemUT[S[_]](
 
   type F[A] = Free[S, A]
 
-  def liftIO[A]: FileSystemUT[Coproduct[Task[?], S, ?]] =
+  def supports(bc: BackendCapability): Boolean =
+    ref supports bc
+
+  def liftIO: FileSystemUT[Coproduct[Task, S, ?]] =
     FileSystemUT(
-      name,
+      ref,
       NaturalTransformation.refl[Task] :+: testInterp,
       NaturalTransformation.refl[Task] :+: setupInterp,
       testDir,
       close)
 
   def contramap[T[_]](f: T ~> S): FileSystemUT[T] =
-    FileSystemUT(name, testInterp compose f, setupInterp compose f, testDir, close)
+    FileSystemUT(ref, testInterp compose f, setupInterp compose f, testDir, close)
 
   def contramapF[T[_]](f: T ~> Free[S, ?]): FileSystemUT[T] =
     FileSystemUT(
-      name,
+      ref,
       foldMapNT(testInterp) compose f,
       foldMapNT(setupInterp) compose f,
       testDir,

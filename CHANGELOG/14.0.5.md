@@ -1,0 +1,2 @@
+- Use MTL classes for SQL² (which required moving and expanding our variants from MarkLogic)
+- Move from `Fix[LP]` and `T[LP]` to `[T](implicit Recursive.Aux[T, LP])`

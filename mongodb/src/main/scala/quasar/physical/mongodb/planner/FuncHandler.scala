@@ -21,7 +21,6 @@ import quasar.physical.mongodb.Bson
 import quasar.physical.mongodb.expression._
 import quasar.qscript.{Coalesce => _, _}, MapFuncs._
 
-import java.time.Instant
 import matryoshka._
 import scalaz.{Divide => _, _}, Scalaz._
 
@@ -32,7 +31,7 @@ final case class FuncHandler[T[_[_]], F[_]](run: MapFunc[T, ?] ~> λ[α => Optio
     new FuncHandler[T, H](λ[MapFunc[T, ?] ~> λ[α => Option[Free[H, α]]]](f =>
       self.run(f).map(_.mapSuspension(injF)) orElse
       other.run(f).map(_.mapSuspension(injG))))
-    }
+}
 
 object FuncHandler {
   type M[F[_], A] = Option[Free[F, A]]
@@ -42,7 +41,7 @@ object FuncHandler {
 
     new FuncHandler[T, EX](new (MapFunc[T, ?] ~> M[EX, ?]) {
       def apply[A](fa: MapFunc[T, A]): M[EX, A] = {
-        val fp = ExprOpCoreF.fixpoint[Free[?[_], A], EX]
+        val fp = new ExprOpCoreF.fixpoint[Free[EX, A], EX](Free.roll)
         import fp._
 
         fa.some collect {
@@ -92,7 +91,7 @@ object FuncHandler {
           case ExtractDayOfYear(a1) => $dayOfYear(a1)
           case ExtractEpoch(a1) =>
             $divide(
-              $subtract(a1, $literal(Bson.Date(Instant.ofEpochMilli(0)))),
+              $subtract(a1, $literal(Bson.Date(0))),
               $literal(Bson.Int32(1000)))
           case ExtractHour(a1) => $hour(a1)
           case ExtractIsoDayOfWeek(a1) =>
@@ -127,10 +126,25 @@ object FuncHandler {
           case ExtractYear(a1) => $year(a1)
 
           case ToTimestamp(a1) =>
-            $add($literal(Bson.Date(Instant.ofEpochMilli(0))), a1)
+            $add($literal(Bson.Date(0)), a1)
 
-          case Between(a1, a2, a3)   => $and($lte(a2, a1),
-                                              $lte(a1, a3))
+          case Between(a1, a2, a3)   => $and($lte(a2, a1), $lte(a1, a3))
+          // TODO: With type info, we could reduce the number of comparisons necessary.
+          case TypeOf(a1) =>
+            $cond($lt(a1, $literal(Bson.Null)),                             $literal(Bson.Undefined),
+              $cond($eq(a1, $literal(Bson.Null)),                           $literal(Bson.Text("null")),
+                // TODO: figure out how to distinguish integer
+                $cond($lt(a1, $literal(Bson.Text(""))),                     $literal(Bson.Text("decimal")),
+                  // TODO: Once we’re encoding richer types, we need to check for metadata here.
+                  $cond($lt(a1, $literal(Bson.Doc())),                      $literal(Bson.Text("array")),
+                    $cond($lt(a1, $literal(Bson.Arr())),                    $literal(Bson.Text("map")),
+                      $cond($lt(a1, $literal(Bson.ObjectId(Check.minOid))), $literal(Bson.Text("array")),
+                        $cond($lt(a1, $literal(Bson.Bool(false))),          $literal(Bson.Text("_bson.objectid")),
+                          $cond($lt(a1, $literal(Check.minDate)),           $literal(Bson.Text("boolean")),
+                            $cond($lt(a1, $literal(Check.minTimestamp)),    $literal(Bson.Text("_ejson.timestamp")),
+                              // FIXME: This only sorts distinct from Date in 3.0+, so we have to be careful … somehow.
+                              $cond($lt(a1, $literal(Check.minRegex)),      $literal(Bson.Text("_bson.timestamp")),
+                                                                            $literal(Bson.Text("_bson.regularexpression"))))))))))))
         }
       }
     })
@@ -140,7 +154,7 @@ object FuncHandler {
     implicit def hole[D](d: D): Free[ExprOp3_0F, D] = Free.pure(d)
     new FuncHandler[T, ExprOp3_0F](new (MapFunc[T, ?] ~> M[ExprOp3_0F, ?]) {
       def apply[A](fa: MapFunc[T, A]): M[ExprOp3_0F, A] = {
-        val fp = ExprOp3_0F.fixpoint[Free[?[_], A], ExprOp3_0F]
+        val fp = new ExprOp3_0F.fixpoint[Free[ExprOp3_0F, A], ExprOp3_0F](Free.roll)
         import fp._
         import FormatSpecifier._
 
@@ -156,7 +170,7 @@ object FuncHandler {
     implicit def hole[D](d: D): Free[ExprOp3_2F, D] = Free.pure(d)
     new FuncHandler[T, ExprOp3_2F](new (MapFunc[T, ?] ~> M[ExprOp3_2F, ?]) {
       def apply[A](fa: MapFunc[T, A]): M[ExprOp3_2F, A] = {
-        val fp = ExprOp3_2F.fixpoint[Free[?[_], A], ExprOp3_2F]
+        val fp = new ExprOp3_2F.fixpoint[Free[ExprOp3_2F, A], ExprOp3_2F](Free.roll)
         import fp._
 
         fa.some collect {
@@ -170,7 +184,7 @@ object FuncHandler {
   def trunc2_6[EX[_]: Functor](implicit inj: ExprOpCoreF :<: EX): Free[EX, ?] ~> Free[EX, ?] =
     new (Free[EX, ?] ~> Free[EX, ?]) {
       def apply[A](expr: Free[EX, A]): Free[EX, A] = {
-        val fp = ExprOpCoreF.fixpoint[Free[?[_], A], EX]
+        val fp = new ExprOpCoreF.fixpoint[Free[EX, A], EX](Free.roll)
         import fp._
 
         $subtract(expr, $mod(expr, $literal(Bson.Int32(1))))
@@ -180,7 +194,7 @@ object FuncHandler {
   def trunc3_2[EX[_]: Functor](implicit inj: ExprOp3_2F :<: EX): Free[EX, ?] ~> Free[EX, ?] =
     new (Free[EX, ?] ~> Free[EX, ?]) {
       def apply[A](expr: Free[EX, A]): Free[EX, A] = {
-        val fp = ExprOp3_2F.fixpoint[Free[?[_], A], EX]
+        val fp = new ExprOp3_2F.fixpoint[Free[EX, A], EX](Free.roll)
         import fp._
 
         $trunc(expr)

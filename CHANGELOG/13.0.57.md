@@ -1,0 +1,1 @@
+- Fix few bugs (integration tests) for spark-core

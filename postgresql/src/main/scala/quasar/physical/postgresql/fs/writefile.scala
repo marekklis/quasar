@@ -96,11 +96,7 @@ object writefile {
   ): Free[S, Vector[FileSystemError]] =
     (for {
       tbl  <- writeHandles.get(h).toRight(Vector(FileSystemError.unknownWriteHandle(h)))
-      data <- EitherT(chunk.foldMap(d =>
-                DataCodec.render(d).bimap(
-                  err => Vector(FileSystemError.writeFailed(d, err.shows)),
-                  List(_))
-              ).point[Free[S, ?]])
+      data =  chunk.map(DataCodec.render).unite
       qry  =  insertQueryStr(tbl.v) _
       _    <- lift(data.traverse(d =>
                 Update[HNil](qry(d), none).toUpdate0(HNil).run.void

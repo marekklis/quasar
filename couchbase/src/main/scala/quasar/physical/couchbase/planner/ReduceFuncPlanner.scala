@@ -17,60 +17,29 @@
 package quasar.physical.couchbase.planner
 
 import quasar.Predef._
-import quasar.fp.eitherT._
-import quasar.common.PhaseResult.detail
 import quasar.physical.couchbase._
 import quasar.physical.couchbase.N1QL._
-import quasar.qscript, qscript._
+import quasar.qscript, qscript.{ReduceFunc, ReduceFuncs => RF}
 
 import matryoshka._
+import matryoshka.implicits._
 import scalaz._, Scalaz._
 
-final class ReduceFuncPlanner[F[_]: Monad] extends Planner[F, ReduceFunc] {
-  import ReduceFuncs._
+final class ReduceFuncPlanner[T[_[_]]: CorecursiveT, F[_]: Monad] extends Planner[T, F, ReduceFunc] {
 
-  def plan: AlgebraM[M, ReduceFunc, N1QL] = {
-    case Arbitrary(a)     =>
-      val aN1ql   = n1ql(a)
-      val n1qlStr = s"min($aN1ql)"
-      prtell[M](Vector(detail(
-        "N1QL Arbitrary",
-        s"""  a:    $aN1ql
-           |  n1ql: $n1qlStr""".stripMargin('|')
-      ))).as(
-        partialQueryString(n1qlStr)
-      )
-    case Avg(a)           =>
-      partialQueryString(s"avg(${n1ql(a)})").point[M]
-    case Count(a)         =>
-      partialQueryString(s"count(${n1ql(a)})").point[M]
-    case Max(a)           =>
-      partialQueryString(s"max(${n1ql(a)})").point[M]
-    case Min(a)           =>
-      partialQueryString(s"min(${n1ql(a)})").point[M]
-    case Sum(a)           =>
-      partialQueryString(s"sum(${n1ql(a)})").point[M]
-    case UnshiftArray(a)  =>
-      val aN1ql   = n1ql(a)
-      val n1qlStr = s"array_agg($aN1ql)"
-      prtell[M](Vector(detail(
-        "N1QL UnshiftArray",
-        s"""  a:    $aN1ql
-           |  n1ql: $n1qlStr""".stripMargin('|')
-      ))).as(
-        partialQueryString(n1qlStr)
-      )
-    case UnshiftMap(k, v) =>
-      val kN1ql   = n1ql(k)
-      val vN1ql   = n1ql(v)
-      val n1qlStr = s"object_add({}, $kN1ql, $vN1ql)"
-      prtell[M](Vector(detail(
-        "N1QL UnshiftMap",
-        s"""  k:    $kN1ql
-           |  v:    $vN1ql
-           |  n1ql: $n1qlStr""".stripMargin('|')
-      ))).as(
-        partialQueryString(n1qlStr)
-      )
+  def plan: AlgebraM[M, ReduceFunc, T[N1QL]] = planʹ >>> (_.embed.η[M])
+
+  val planʹ: Transform[T[N1QL], ReduceFunc, N1QL] = {
+    case RF.Arbitrary(a1)      => Min(a1)
+    case RF.Avg(a1)            => Avg(a1)
+    case RF.Count(a1)          => Count(a1)
+    case RF.First(a1)          => ???
+    case RF.Last(a1)           => ???
+    case RF.Max(a1)            => Max(a1)
+    case RF.Min(a1)            => Min(a1)
+    case RF.Sum(a1)            => Sum(a1)
+    case RF.UnshiftArray(a1)   => ArrAgg(a1)
+    case RF.UnshiftMap(a1, a2) => Obj(Map(a1 -> a2))
   }
+
 }

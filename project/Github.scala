@@ -30,7 +30,6 @@ object GithubPlugin extends Plugin {
     lazy val BuildNumber = Option(System.getenv("TRAVIS_BUILD_NUMBER"))
     lazy val RepoSlug    = Option(System.getenv("TRAVIS_REPO_SLUG"))
     lazy val Commit      = Option(System.getenv("TRAVIS_COMMIT"))
-    lazy val IsTravis    = Option(System.getenv("TRAVIS")).fold(false)(_ => true)
   }
 
   lazy val githubSettings: Seq[Setting[_]] = Seq(

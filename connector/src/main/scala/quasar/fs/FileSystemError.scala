@@ -24,12 +24,13 @@ import quasar.frontend.logicalplan.LogicalPlan
 
 import argonaut.JsonObject
 import matryoshka._
+import matryoshka.data.Fix
 import monocle.Prism
 import pathy.Path.posixCodec
 import scalaz._
 import scalaz.syntax.show._
 
-sealed trait FileSystemError
+sealed abstract class FileSystemError
 
 object FileSystemError {
   import QueryFile.ResultHandle

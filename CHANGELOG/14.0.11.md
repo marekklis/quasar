@@ -1,0 +1,1 @@
+- Couchbase: Verify sufficient version

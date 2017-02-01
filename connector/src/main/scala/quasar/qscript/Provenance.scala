@@ -17,7 +17,6 @@
 package quasar.qscript.provenance
 
 import quasar.Predef._
-import quasar.contrib.matryoshka._
 import quasar.ejson.EJson
 import quasar.fp._
 import quasar.qscript._
@@ -26,6 +25,7 @@ import quasar.qscript.MapFuncs._
 import scala.Predef.$conforms
 
 import matryoshka._
+import matryoshka.data._
 import monocle.macros.Lenses
 import scalaz._, Scalaz._
 
@@ -68,7 +68,7 @@ object Provenance {
   }
 }
 
-class ProvenanceT[T[_[_]]: Corecursive: EqualT] extends TTypes[T] {
+class ProvenanceT[T[_[_]]: CorecursiveT: EqualT] extends TTypes[T] {
   type Provenance = quasar.qscript.provenance.Provenance[T]
 
   def genComparisons(lps: List[Provenance], rps: List[Provenance]): JoinFunc =
@@ -128,7 +128,6 @@ class ProvenanceT[T[_[_]]: Corecursive: EqualT] extends TTypes[T] {
   def genBuckets(ps: List[Provenance]): Option[(List[Provenance], FreeMap)] =
     ps.traverse(genBucket).eval(0).unzip.traverse(_.join match {
       case Nil      => None
-      case h :: Nil => h.some
       case h :: t   =>
         t.foldLeft(
           Free.roll(MakeArray[T, FreeMap](h)))(

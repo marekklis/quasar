@@ -1,6 +1,7 @@
 {
     "name": "group by array",
     "backends": {
+        "mongodb_q_3_2": "pending",
         "postgresql": "pending"
     },
     "data": "slamengine_commits.data",

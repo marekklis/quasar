@@ -68,6 +68,25 @@ class SelectorSpec extends quasar.Qspec  {
         val cond = NotExpr(Eq(10))
         cond.bson must_== Bson.Doc("$ne" -> Bson.Int32(10))
       }
+
+      "render nested And within Or" in {
+        val cs =
+          Or(
+            And(
+              Doc(BsonField.Name("foo") -> Gt(10)),
+              Doc(BsonField.Name("foo") -> Lt(20))),
+            And(
+              Doc(BsonField.Name("bar") -> Gte(1)),
+              Doc(BsonField.Name("bar") -> Lte(5))))
+
+        cs.bson must_== Bson.Doc("$or" -> Bson.Arr(
+          Bson.Doc("$and" -> Bson.Arr(
+            Bson.Doc("foo" -> Bson.Doc("$gt" -> Bson.Int32(10))),
+            Bson.Doc("foo" -> Bson.Doc("$lt" -> Bson.Int32(20))))),
+          Bson.Doc("$and" -> Bson.Arr(
+            Bson.Doc("bar" -> Bson.Doc("$gte" -> Bson.Int32(1))),
+            Bson.Doc("bar" -> Bson.Doc("$lte" -> Bson.Int32(5)))))))
+      }
     }
 
     "negate" should {
@@ -97,24 +116,6 @@ class SelectorSpec extends quasar.Qspec  {
         sel.negate must_== Or(
           Doc(ListMap(("x": BsonField) -> NotExpr(Lt(10)))),
           Doc(ListMap(("y": BsonField) -> NotExpr(Gt(10)))))
-      }
-    }
-
-    "constructors" should {
-      "define nested $and and $or" in {
-        val cs =
-          Or(
-            And(
-              Doc(BsonField.Name("foo") -> Gt(10)),
-              Doc(BsonField.Name("foo") -> Lt(20))
-            ),
-            And(
-              Doc(BsonField.Name("bar") -> Gte(1)),
-              Doc(BsonField.Name("bar") -> Lte(5))
-            )
-          )
-
-        1 must_== 1
       }
     }
   }

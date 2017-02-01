@@ -26,26 +26,11 @@ import scalaz.std.iterable._
 
 @SuppressWarnings(Array("org.wartremover.warts.DefaultArguments"))
 object cts {
-  def andQuery(query: XQuery, queryOrOptions: XQuery*): XQuery =
-    XQuery(s"cts:and-query${mkSeq_(query, queryOrOptions: _*)}")
-
   def directoryQuery(uri: XQuery, urisOrDepth: XQuery*): XQuery =
     XQuery(s"cts:directory-query${mkSeq(uri +: urisOrDepth)}")
 
-  def documentOrder(direction: XQuery): XQuery =
-    XQuery(s"cts:document-order($direction)")
-
-  def elementValueQuery(elementName: XQuery, textOrOptionsOrWeight: XQuery*): XQuery =
-    XQuery(s"cts:element-value-query${mkSeq_(elementName, textOrOptionsOrWeight: _*)}")
-
-  def jsonPropertyValueQuery(propertyName: XQuery, propertyNameOrValueOrOptionsOrWeight: XQuery*): XQuery =
-    XQuery(s"cts:json-property-value-query${mkSeq_(propertyName, propertyNameOrValueOrOptionsOrWeight: _*)}")
-
   def indexOrder(index: XQuery, options: XQuery*) =
     XQuery(s"cts:index-order($index, ${mkSeq(options)})")
-
-  def orQuery(query: XQuery, queryOrOptions: XQuery*): XQuery =
-    XQuery(s"cts:or-query${mkSeq_(query, queryOrOptions: _*)}")
 
   def search(
     expr: XQuery,
@@ -55,9 +40,6 @@ object cts {
     forestIds: IList[XQuery] = IList.empty
   ): XQuery =
     XQuery(s"cts:search($expr, $query, ${mkSeq(options)}, ${qualityWeight getOrElse "1.0".xqy}, ${mkSeq(forestIds)})")
-
-  val trueQuery: XQuery =
-    XQuery("cts:true-query()")
 
   val uriReference: XQuery =
     XQuery("cts:uri-reference()")

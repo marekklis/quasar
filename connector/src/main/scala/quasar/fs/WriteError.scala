@@ -19,7 +19,7 @@ package quasar.fs
 import quasar.Predef._
 import quasar.{Data, DataCodec}
 
-import argonaut._, Argonaut._, EncodeJsonScalaz._
+import argonaut._, Argonaut._
 
 import scalaz.Show
 

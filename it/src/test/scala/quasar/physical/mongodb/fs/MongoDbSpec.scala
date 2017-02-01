@@ -19,6 +19,7 @@ package quasar.physical.mongodb.fs
 import quasar.Predef._
 import quasar._
 import quasar.contrib.pathy.ADir
+import quasar.fs.FileSystemType
 import quasar.fs.mount.ConnectionUri
 import quasar.physical.mongodb.Collection
 
@@ -36,21 +37,19 @@ object MongoDbSpec {
       Task.now))
 
   def tempColl(prefix: ADir): Task[Collection] =
-    for {
-      n <- NameGenerator.salt
-      c <- Collection.fromFile(prefix </> file(n))
-            .fold(err => Task.fail(new RuntimeException(err.shows)), Task.now)
-    } yield c
+    NameGenerator.salt >>= (n =>
+      Collection.fromFile(prefix </> file(n)).fold(
+        err => Task.fail(new RuntimeException(err.shows)),
+        Task.now))
 
-  def clientShould(examples: (BackendName, ADir, MongoClient, MongoClient) => Fragment): Fragments =
+  def clientShould(fsType: FileSystemType)(examples: (BackendName, ADir, MongoClient, MongoClient) => Fragment): Fragments =
     TestConfig.testDataPrefix.flatMap { prefix =>
-      TestConfig.fileSystemConfigs(MongoDBFsType).flatMap(_.traverse { case (name, setupUri, testUri) =>
-        (connect(setupUri) |@| connect(testUri)) { (setupClient, testClient) =>
-            Fragments(
-              examples(name, prefix, setupClient, testClient),
-              step(testClient.close),
-              step(setupClient.close))
-          }
+      TestConfig.fileSystemConfigs(fsType) >>= (_.traverse { case (ref, setupUri, testUri) =>
+        (connect(setupUri) |@| connect(testUri))((setupClient, testClient) =>
+          Fragments(
+            examples(ref.name, prefix, setupClient, testClient),
+            step(testClient.close),
+            step(setupClient.close)))
       })
     }.map(_.suml).unsafePerformSync
 }

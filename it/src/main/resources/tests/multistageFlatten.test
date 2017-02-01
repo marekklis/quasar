@@ -1,9 +1,13 @@
 {
     "name": "multi-flatten with fields at various depths",
     "backends": {
+        "couchbase":  "skip",
+        "marklogic_json": "skip",
+        "marklogic_xml":  "skip",
+        "mongodb_q_3_2": "pending",
         "postgresql": "pending",
-        "marklogic":  "skip",
-        "couchbase":  "skip"
+        "spark_local": "skip",
+        "spark_hdfs": "skip"
     },
     "data": "nested_foo.data",
     "query": "select * from nested_foo where (
@@ -16,10 +20,10 @@
     "FIXME": "Should use `containsExactly`, but see issue #732.",
     "predicate": "equalsExactly",
     "expected": [
-        { "value": { "_id": { "$oid": "5552744bd86735b7268fd002" }, "a": "13" } },
-        { "value": { "_id": { "$oid": "55538123d86735b7268fd003" }, "foo": "zap" } },
-        { "value": { "_id": { "$oid": "55538123d86735b7268fd004" }, "foo": [15, [{ "baz": ["quux"] }]] } },
-        { "value": { "_id": { "$oid": "55538123d86735b7268fd005" }, "foo": ["15z", [{ "baz": ["qx"] }]] } },
-        { "value": { "_id": { "$oid": "55538123d86735b7268fd006" }, "foo": [18, ["meh", { "baz": ["qx"] }]] } },
-        { "value": { "_id": { "$oid": "55538123d86735b7268fd007" }, "foo": [16, [{ "baz": "mooooo" }]] } }]
+        { "_id": { "$oid": "5552744bd86735b7268fd002" }, "a": "13" },
+        { "_id": { "$oid": "55538123d86735b7268fd003" }, "foo": "zap" },
+        { "_id": { "$oid": "55538123d86735b7268fd004" }, "foo": [15, [{ "baz": ["quux"] }]] },
+        { "_id": { "$oid": "55538123d86735b7268fd005" }, "foo": ["15z", [{ "baz": ["qx"] }]] },
+        { "_id": { "$oid": "55538123d86735b7268fd006" }, "foo": [18, ["meh", { "baz": ["qx"] }]] },
+        { "_id": { "$oid": "55538123d86735b7268fd007" }, "foo": [16, [{ "baz": "mooooo" }]] }]
 }

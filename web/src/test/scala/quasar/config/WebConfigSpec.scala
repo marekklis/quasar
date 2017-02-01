@@ -18,7 +18,7 @@ package quasar.config
 
 import quasar.Predef._
 import quasar.fs.mount._
-import quasar.physical.mongodb.fs.MongoDBFsType
+import quasar.physical.mongodb
 
 import pathy.Path._
 
@@ -27,7 +27,7 @@ class WebConfigSpec extends ConfigSpec[WebConfig] {
   def sampleConfig(uri: ConnectionUri): WebConfig = WebConfig(
     server = ServerConfig(92),
     mountings = MountingsConfig(Map(
-      rootDir -> MountConfig.fileSystemConfig(MongoDBFsType, uri))))
+      rootDir -> MountConfig.fileSystemConfig(mongodb.fs.FsType, uri))))
 
   override def ConfigStr =
     s"""{

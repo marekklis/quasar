@@ -17,221 +17,199 @@
 package quasar.physical.couchbase.planner
 
 import quasar.Predef._
-import quasar.NameGenerator
+import quasar.{Data => QData, NameGenerator}
 import quasar.Planner.InternalError
-import quasar.common.{PhaseResult, SortDir}, PhaseResult.detail
-import quasar.contrib.matryoshka._
 import quasar.ejson
-import quasar.fp._, eitherT._
+import quasar.fp._
 import quasar.fp.ski.κ
-import quasar.physical.couchbase._, N1QL._, Select._
+import quasar.physical.couchbase._, N1QL.{Id, Union, _}, Case._, Select.{Filter, Value, _}
 import quasar.physical.couchbase.planner.Planner._
-import quasar.qscript, qscript.{Map => _, Read => _, _}
+import quasar.qscript, qscript._
 
-import matryoshka.{Hole => _, _}, Recursive.ops._
-import scalaz._, Scalaz.{ToIdOps => _, _}
+import matryoshka._
+import matryoshka.data._
+import matryoshka.implicits._
+import matryoshka.patterns._
+import scalaz._, Scalaz._, NonEmptyList.nels
 
-final class QScriptCorePlanner[F[_]: Monad: NameGenerator, T[_[_]]: Recursive: Corecursive: ShowT]
-  extends Planner[F, QScriptCore[T, ?]] {
+final class QScriptCorePlanner[T[_[_]]: BirecursiveT: ShowT, F[_]: Monad: NameGenerator]
+  extends Planner[T, F, QScriptCore[T, ?]] {
 
-  def processFreeMapDefault(f: FreeMap[T], tmpName: String): M[N1QL] =
-    freeCataM(f)(interpretM(
-      κ(partialQueryString(tmpName).point[M]),
-      mapFuncPlanner[F, T].plan))
+  def int(i: Int) = Data[T[N1QL]](QData.Int(i)).embed
 
-  def processFreeMap(f: FreeMap[T], tmpName: String): M[N1QL] =
-    f.toCoEnv[T].project match {
+  def processFreeMapDefault(f: FreeMap[T], id: Id[T[N1QL]]): M[T[N1QL]] =
+    f.cataM(interpretM(κ(id.embed.η[M]), mapFuncPlanner[T, F].plan))
+
+  def processFreeMap(f: FreeMap[T], id: Id[T[N1QL]]): M[T[N1QL]] =
+    f.project match {
       case MapFunc.StaticMap(elems) =>
         elems.traverse(_.bitraverse(
+          // TODO: Revisit String key requirement
           {
             case Embed(ejson.Common(ejson.Str(key))) =>
-              key.point[M]
+              Data[T[N1QL]](QData.Str(key)).embed.η[M]
             case key =>
               EitherT(
                 InternalError.fromMsg(s"Unsupported object key: ${key.shows}")
-                  .left[String].point[PR])
+                  .left[T[N1QL]].η[PR])
           },
-          v => processFreeMapDefault(v.fromCoEnv, tmpName)
-        )) ∘ (m =>
-          partialQueryString(m.map { case (k, v) => s""""$k": ${n1ql(v)}""" }.mkString("{", ", ", "}"))
-        )
+          v => processFreeMapDefault(v, id)
+        )) ∘ (l => Obj(l.toMap).embed)
       case _ =>
-        processFreeMapDefault(f, tmpName)
+        processFreeMapDefault(f, id)
     }
 
-
-  val plan: AlgebraM[M, QScriptCore[T, ?], N1QL] = {
+  def plan: AlgebraM[M, QScriptCore[T, ?], T[N1QL]] = {
     case qscript.Map(src, f) =>
       for {
-        tmpName  <- genName[M]
-        srcN1ql  =  n1ql(src)
-        ff       <- processFreeMap(f, tmpName)
-        ffN1ql   =  n1ql(ff)
-        rN1ql    =  src match {
-                      case _: Select | _: Read =>
-                        select(
-                          value         = true,
-                          resultExprs   = ffN1ql.wrapNel,
-                          keyspace      = src,
-                          keyspaceAlias = tmpName)
-                      case _ =>
-                        selectLet(
-                          value       = true,
-                          resultExprs = ffN1ql.wrapNel,
-                          let         = Map(tmpName -> srcN1ql))
-                    }
-        rN1qlStr =  n1ql(rN1ql)
-        _        <- prtell[M](Vector(detail(
-                     "N1QL Map",
-                       s"""  src: ${n1ql(src)}
-                          |  f:   $ffN1ql
-                          |  n1ql: $rN1qlStr""".stripMargin('|'))))
-      } yield rN1ql
+        id1 <- genId[T[N1QL], M]
+        ff  <- processFreeMap(f, id1)
+      } yield Select(
+        Value(true),
+        ResultExpr(ff, none).wrapNel,
+        Keyspace(wrapSelect(src), id1.some).some,
+        unnest  = none,
+        let     = nil,
+        filter  = none,
+        groupBy = none,
+        orderBy = nil).embed
 
     case LeftShift(src, struct, id, repair) =>
       for {
-        n1    <- genName[M]
-        n2    <- genName[M]
-        s     <- freeCataM(struct)(interpretM(
-                   κ(partialQueryString(n1).point[M]),
-                   mapFuncPlanner[F, T].plan))
-        sN1ql =  n1ql(s)
-        u     =  id match {
-                   case IdOnly    =>
-                     s"ifnull(object_names($sN1ql), array_range(0, array_length(z)))"
-                   case IncludeId =>
-                     val a = s"(array [i, $sN1ql[i]] for i in array_range(0, array_length($sN1ql)) end)"
-                     s"(case when isobject($sN1ql) then $sN1ql else $a end)"
-                   case ExcludeId =>
-                     s"ifnull(object_values($sN1ql), $sN1ql)"
-                 }
-        r     <- freeCataM(repair)(interpretM(
-                   {
-                     case LeftSide  =>
-                       partialQueryString(n1).point[M]
-                     case RightSide =>
-                       (select(
-                         value         = true,
-                         resultExprs   = n2.wrapNel,
-                         keyspace      = src,
-                         keyspaceAlias = n1) |>
-                         unnest.set((u, n2).some)
-                       ).n1ql.point[M]
-                   },
-                      mapFuncPlanner[F, T].plan))
-        rN1ql =  n1ql(r)
-        _     <- prtell[M](Vector(detail(
-                   "N1QL LeftShift",
-                   s"""  src:      ${n1ql(src)}
-                      |  struct:   $sN1ql
-                      |  idStatus: $id
-                      |  repair:   $rN1ql
-                      |  n1ql:     $rN1ql""".stripMargin('|')
-                 )))
+        id1 <- genId[T[N1QL], M]
+        id2 <- genId[T[N1QL], M]
+        id3 <- genId[T[N1QL], M]
+        s   <- struct.cataM(interpretM(
+                 κ(id1.embed.η[M]),
+                 mapFuncPlanner[T, F].plan))
+        sr  =  ArrRange(int(0), LengthArr(s).embed, none)
+        u   <- (id match {
+                 case IdOnly =>
+                   IfNull(
+                     ObjNames(s).embed,
+                     sr.embed)
+                 case IncludeId =>
+                   Case(
+                     WhenThen(IsObj(s).embed, s)
+                   )(
+                     Else(ArrFor(
+                       expr   = Arr(List(id3.embed, SelectElem(s, id3.embed).embed)).embed,
+                       `var`  = id3.embed,
+                       inExpr = sr.embed).embed)
+                   )
+                 case ExcludeId =>
+                   IfNull(ObjValues(s).embed, s)
+               }).embed.η[M]
+        r   <- repair.cataM(interpretM(
+                 {
+                   case LeftSide  =>
+                     id1.embed.η[M]
+                   case RightSide =>
+                     Select(
+                       Value(true),
+                       ResultExpr(id2.embed, none).wrapNel,
+                       Keyspace(wrapSelect(src), id1.some).some,
+                       Unnest(u, id2.some).some,
+                       let     = nil,
+                       filter  = none,
+                       groupBy = none,
+                       orderBy = nil).embed.η[M]
+                 },
+                 mapFuncPlanner[T, F].plan))
       } yield r
 
     case qscript.Reduce(src, bucket, reducers, repair) =>
       for {
-        tmpName <- genName[M]
-        b       <- processFreeMap(bucket, tmpName)
-        red     =  reducers.map(
-                     _.traverse(
-                       red => processFreeMap(red, tmpName)
-                     ).flatMap(reduceFuncPlanner[F].plan)
-                   )
-        rep     <- freeCataM(repair)(interpretM(i => red(i.idx), mapFuncPlanner[F, T].plan))
-        repN1ql =  n1ql(rep)
-        bN1ql   =  n1ql(b)
-        s       =  select(
-                     value         = true,
-                     resultExprs   = repN1ql.wrapNel,
-                     keyspace      = src,
-                     keyspaceAlias = tmpName) |>
-                     groupBy.set(bN1ql.some)
-        sN1ql   =  n1ql(s)
-        _       <- prtell[M](Vector(detail(
-                     "N1QL Reduce",
-                     s"""  src:      ${n1ql(src)}
-                        |  bucket:   $bN1ql
-                        |  repair:   $repN1ql
-                        |  n1ql:     $sN1ql""".stripMargin('|'))))
-      } yield s
+        id1 <- genId[T[N1QL], M]
+        id2 <- genId[T[N1QL], M]
+        id3 <- genId[T[N1QL], M]
+        b   <- processFreeMap(bucket, id1)
+        red =  reducers.map(
+                 _.traverse(
+                   red => processFreeMap(red, id1)
+                 ).flatMap(reduceFuncPlanner[T, F].plan)
+               )
+        rep <- repair.cataM(interpretM(i => red(i.idx), mapFuncPlanner[T, F].plan))
+      } yield {
+        val s = Select(
+          Value(false),
+          ResultExpr(rep, id2.some).wrapNel,
+          Keyspace(src, id1.some).some,
+          unnest  = none,
+          let     = nil,
+          filter  = none,
+          GroupBy(b).some,
+          orderBy = nil).embed
+
+        Select(
+          Value(true),
+          ResultExpr(id2.embed, none).wrapNel,
+          Keyspace(s, id3.some).some,
+          unnest  = none,
+          let     = nil,
+          Filter(IsNotNull(id2.embed).embed).some,
+          groupBy = none,
+          orderBy = nil).embed
+      }
 
     case qscript.Sort(src, bucket, order) =>
       for {
-        tmpName1 <- genName[M]
-        tmpName2 <- genName[M]
-        tmpName3 <- genName[M]
-        b        <- processFreeMap(bucket, tmpName1)
-        o        <- order.traverse { case (or, d) =>
-                      val dir = d match {
-                        case SortDir.Ascending  => "ASC"
-                        case SortDir.Descending => "DESC"
-                      }
-                      processFreeMap(or, tmpName3) ∘ (ord => s"${n1ql(ord)} $dir")
-                    }.map(_ intercalate (", "))
-        bN1ql    =  n1ql(b)
-        bN1qlN   =  s"ifnull($bN1ql, $tmpName1)"
-        s        =  select(
-                      value         = true,
-                      resultExprs   = s"array_agg($tmpName1)".wrapNel,
-                      keyspace      = src,
-                      keyspaceAlias = tmpName1) |>
-                    groupBy.set(bN1qlN.some)
-        r        =  select(
-                      value         = true,
-                      resultExprs   = tmpName3.wrapNel,
-                      keyspace      = s,
-                      keyspaceAlias = tmpName2) |>
-                    unnest.set((tmpName2, tmpName3).some) >>>
-                    orderBy.set(o.some)
-        _        <- prtell[M](Vector(detail(
-                      "N1QL Sort",
-                      s"""  src:    ${n1ql(src)}
-                         |  bucket: $bN1ql
-                         |  order:  $o
-                         |  n1ql:   ${n1ql(r)}""".stripMargin('|'))))
-      } yield r
+        id1 <- genId[T[N1QL], M]
+        id2 <- genId[T[N1QL], M]
+        id3 <- genId[T[N1QL], M]
+        b   <- processFreeMap(bucket, id1)
+        o   <- order.traverse { case (or, d) =>
+                 (processFreeMap(or, id3) ∘ (OrderBy(_, d)))
+               }
+      } yield {
+        val s =  Select(
+           Value(true),
+           ResultExpr(ArrAgg(id1.embed).embed, none).wrapNel,
+           Keyspace(src, id1.some).some,
+           unnest  = none,
+           let     = nil,
+           filter  = none,
+           GroupBy(IfNull(b, id1.embed).embed).some,
+           orderBy = nil).embed
+
+        Select(
+          Value(true),
+          ResultExpr(id3.embed, none).wrapNel,
+          Keyspace(s, id2.some).some,
+          Unnest(id2.embed, id3.some).some,
+          let     = nil,
+          filter  = none,
+          groupBy = none,
+          orderBy = o.toList).embed
+      }
 
     case qscript.Filter(src, f) =>
       for {
-        tmpName  <- genName[M]
-        fN1ql    <- processFreeMap(f, tmpName)
-        fN1qlStr =  n1ql(fN1ql)
-        sel      =  select(
-                      value         = true,
-                      resultExprs   = tmpName.wrapNel,
-                      keyspace      = src,
-                      keyspaceAlias = tmpName) |>
-                    filter.set(fN1qlStr.some)
-        _        <- prtell[M](Vector(detail(
-                      "N1QL Filter",
-                      s"""  src:  ${n1ql(src)}
-                         |  f:    $fN1qlStr
-                         |  n1ql: ${n1ql(sel)}""".stripMargin('|'))))
-      } yield sel
+        id1  <- genId[T[N1QL], M]
+        ff   <- processFreeMap(f, id1)
+      } yield Select(
+        Value(true),
+        ResultExpr(id1.embed, none).wrapNel,
+        Keyspace(src, id1.some).some,
+        unnest  = none,
+        let     = nil,
+        Filter(ff).some,
+        groupBy = none,
+        orderBy = nil).embed
 
-    case Union(src, lBranch, rBranch) =>
+    case qscript.Union(src, lBranch, rBranch) =>
       for {
-        tmpNameLB <- genName[M]
-        tmpNameRB <- genName[M]
-        lb        <- freeCataM(lBranch)(interpretM(
-                       κ(partialQueryString(tmpNameLB).point[M]),
-                       Planner[F, QScriptTotal[T, ?]].plan))
-        rb        <- freeCataM(rBranch)(interpretM(
-                       κ(partialQueryString(tmpNameRB).point[M]),
-                       Planner[F, QScriptTotal[T, ?]].plan))
-        srcN1ql   =  n1ql(src)
-        lbN1ql    =  n1ql(lb)
-        rbN1ql    =  n1ql(rb)
-        n1qlStr   =  s"($srcN1ql).($lbN1ql) union ($srcN1ql).($rbN1ql)"
-        _         <- prtell[M](Vector(detail(
-                       "N1QL Union",
-                       s"""  src:     $src
-                          |  lBranch: $lb
-                          |  rBranch: $rb
-                          |  n1ql:    $n1qlStr""".stripMargin('|'))))
-      } yield partialQueryString(n1qlStr)
+        idLB <- genId[T[N1QL], M]
+        idRB <- genId[T[N1QL], M]
+        lb   <- lBranch.cataM(interpretM(
+                  κ(idLB.embed.η[M]),
+                  Planner[T, F, QScriptTotal[T, ?]].plan))
+        rb   <- rBranch.cataM(interpretM(
+                  κ(idRB.embed.η[M]),
+                  Planner[T, F, QScriptTotal[T, ?]].plan))
+      } yield Union(
+        SelectField(src, lb).embed,
+        SelectField(src, rb).embed).embed
 
     case qscript.Subset(src, from, op, count) => op match {
       case Drop   => takeOrDrop(src, from, count.right)
@@ -240,52 +218,55 @@ final class QScriptCorePlanner[F[_]: Monad: NameGenerator, T[_[_]]: Recursive: C
     }
 
     case qscript.Unreferenced() =>
-      partialQueryString("(select value [])").point[M]
+      wrapSelect(Arr[T[N1QL]](nil).embed).η[M]
   }
 
-  def takeOrDrop(src: N1QL, from: FreeQS[T], takeOrDrop: FreeQS[T] \/ FreeQS[T]): M[N1QL] =
+  def takeOrDrop(src: T[N1QL], from: FreeQS[T], takeOrDrop: FreeQS[T] \/ FreeQS[T]): M[T[N1QL]] =
     for {
-      tmpName1 <- genName[M]
-      tmpName2 <- genName[M]
-      tmpName3 <- genName[M]
-      tmpName4 <- genName[M]
-      tmpName5 <- genName[M]
-      f        <- freeCataM(from)(interpretM(
-                    κ(partialQueryString(tmpName1).point[M]),
-                    Planner[F, QScriptTotal[T, ?]].plan))
-      c        <- freeCataM(takeOrDrop.merge)(interpretM(
-                    κ(partialQueryString(tmpName1).point[M]),
-                    Planner[F, QScriptTotal[T, ?]].plan))
-      sN1ql    =  n1ql(src)
-      fN1ql    =  n1ql(f)
-      cN1ql    =  n1ql(c)
-      ks       =  select(
-                    value         = true,
-                    resultExprs   = fN1ql.wrapNel,
-                    keyspace      = src,
-                    keyspaceAlias = tmpName1)
-      slice    =  takeOrDrop.bimap(
-                    κ(s"0:least(array_length($tmpName3), $tmpName2[0])"),
-                    κ(s"$tmpName2[0]:")
-                  ).merge
-      slc      =  select(
-                    value         = true,
-                    resultExprs   = s"$tmpName3[$slice]".wrapNel,
-                    keyspace      = ks,
-                    keyspaceAlias = tmpName3) |>
-                  let.set(Map(tmpName2 -> cN1ql).some)
-      sel     = select(
-                    value         = true,
-                    resultExprs   = s"$tmpName5".wrapNel,
-                    keyspace      = slc,
-                    keyspaceAlias = tmpName4)           |>
-                unnest.set((tmpName4, tmpName5).some)
-      selN1ql =  n1ql(sel)
-      _       <- prtell[M](Vector(detail(
-                   s"""N1QL ${takeOrDrop.bimap(κ("Take"), κ("Drop")).merge}""",
-                   s"""  src:   $sN1ql
-                      |  from:  $fN1ql
-                      |  count: $cN1ql
-                      |  n1ql:  $selN1ql""".stripMargin('|'))))
-    } yield sel
+      id1 <- genId[T[N1QL], M]
+      id2 <- genId[T[N1QL], M]
+      id3 <- genId[T[N1QL], M]
+      id4 <- genId[T[N1QL], M]
+      id5 <- genId[T[N1QL], M]
+      f   <- from.cataM(interpretM(
+               κ(id1.embed.η[M]),
+               Planner[T, F, QScriptTotal[T, ?]].plan))
+      c   <- takeOrDrop.merge.cataM(interpretM(
+               κ(id1.embed.η[M]),
+               Planner[T, F, QScriptTotal[T, ?]].plan))
+    } yield {
+      val s =
+        Select(
+          Value(false),
+          nels(
+            ResultExpr(f, id2.some),
+            ResultExpr(c, id3.some)),
+          Keyspace(src, id1.some).some,
+          unnest  = none,
+          let     = nil,
+          filter  = none,
+          groupBy = none,
+          orderBy = nil).embed
+
+      val cnt = SelectElem(id3.embed, int(0)).embed
+
+      val slc =
+        takeOrDrop.bimap(
+           κ(Slice(
+             int(0),
+             Least(LengthArr(id2.embed).embed, cnt).embed.some)),
+           κ(Slice(cnt, none))
+         ).merge.embed
+
+      Select(
+        Value(true),
+        ResultExpr(id5.embed, none).wrapNel,
+        Keyspace(s, id4.some).some,
+        Unnest(SelectElem(id2.embed, slc).embed, id5.some).some,
+        let     = nil,
+        filter  = none,
+        groupBy = none,
+        orderBy = nil).embed
+    }
+
 }

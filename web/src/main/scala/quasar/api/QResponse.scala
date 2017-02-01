@@ -70,9 +70,6 @@ final case class QResponse[S[_]](status: Status, headers: Headers, body: Process
       .merge
   }
 
-  def withHeaders(hdrs: Headers): QResponse[S] =
-    QResponse.headers.set(hdrs)(this)
-
   def withStatus(s: Status): QResponse[S] =
     QResponse.status.set(s)(this)
 }

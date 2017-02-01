@@ -2,14 +2,17 @@
   "name": "dow and isodow",
 
   "backends": {
+    "mongodb_q_3_2": "pending",
     "postgresql": "pending"
   },
 
   "data": "../days.data",
 
-  "query": "select day, date_part(\"dow\", ts) as dow, date_part(\"isodow\", ts) as isodow from `../days`",
+  "query": "select distinct day, date_part(\"dow\", ts) as dow, date_part(\"isodow\", ts) as isodow from `../days`",
 
   "predicate": "containsExactly",
+
+  "ignoreFieldOrder": ["marklogic_json"],
 
   "expected": [
     { "day": "Sunday" ,   "dow": 0, "isodow" : 7 },
@@ -18,6 +21,5 @@
     { "day": "Wednesday", "dow": 3, "isodow" : 3 },
     { "day": "Thursday",  "dow": 4, "isodow" : 4 },
     { "day": "Friday",    "dow": 5, "isodow" : 5 },
-    { "day": "Saturday",  "dow": 6, "isodow" : 6 }
-  ]
+    { "day": "Saturday",  "dow": 6, "isodow" : 6 }]
 }

@@ -17,13 +17,15 @@
 package quasar.std
 
 import quasar.Predef._
-import quasar.{Data, GenericFunc}
+import quasar.{Data, DateArbitrary, GenericFunc}
 import quasar.RenderTree.ops._
 import quasar.fp.ski._
 import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 import quasar.std.StdLib._
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import org.specs2.execute._
 import org.scalacheck.Arbitrary, Arbitrary._
 import scalaz.{Failure => _, _}, Scalaz._
@@ -32,7 +34,7 @@ import shapeless.Nat
 /** Test the typers and simplifiers defined in the std lib functions themselves.
   */
 class SimplifyStdLibSpec extends StdLibSpec {
-  import quasar.frontend.fixpoint.lpf
+  val lpf = new LogicalPlanR[Fix[LP]]
 
   val notHandled: Result \/ Unit = Skipped("not simplified").left
 
@@ -63,8 +65,9 @@ class SimplifyStdLibSpec extends StdLibSpec {
 
   /** Identify constructs that are expected not to be implemented. */
   def shortCircuitLP(args: List[Data]): AlgebraM[Result \/ ?, LP, Unit] = {
-    case Invoke(func, _) => shortCircuit(func, args)
-    case _               => ().right
+    case Invoke(func, _)     => shortCircuit(func, args)
+    case TemporalTrunc(_, _) => notHandled
+    case _                   => ().right
   }
 
   def check(args: List[Data], prg: List[Fix[LP]] => Fix[LP]): Option[Result] =
@@ -102,6 +105,8 @@ class SimplifyStdLibSpec extends StdLibSpec {
     def decDomain = arbitrary[BigDecimal].filter(i => i.scale > Int.MinValue && i.scale < Int.MaxValue)
 
     def stringDomain = arbitrary[String]
+
+    def dateDomain = DateArbitrary.genDate
   }
 
   tests(runner)

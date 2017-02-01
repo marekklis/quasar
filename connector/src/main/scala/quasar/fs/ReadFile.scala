@@ -87,18 +87,6 @@ object ReadFile {
       */
     def scanAll(file: AFile): Process[M, Data] =
       scan(file, 0L, None)
-
-    /** Returns a process that produces at most `limit` items from the beginning
-      * of the given file.
-      */
-    def scanTo(file: AFile, limit: Positive): Process[M, Data] =
-      scan(file, 0L, Some(limit))
-
-    /** Returns a process that produces data from the given file, beginning
-      * at the specified offset.
-      */
-    def scanFrom(file: AFile, offset: Natural): Process[M, Data] =
-      scan(file, offset, None)
   }
 
   object Ops {

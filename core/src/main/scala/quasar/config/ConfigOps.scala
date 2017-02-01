@@ -77,17 +77,6 @@ import simulacrum.typeclass
     }
   }
 
-  /** Loads the configuration from the specified file or OS-specific default
-    * paths. If no configuration file is found, and one was not specified, the
-    * default configuration is returned.
-    */
-  def fromFileOrDefaultIfUnspecified(configFile: Option[FsFile])(implicit D: DecodeJson[C]): CfgTask[C] = {
-    merr.handleError(configFile.cata(fromFile, fromDefaultPaths)) {
-      case FileNotFound(_) if configFile.isEmpty => merr.point(default)
-      case err                                   => merr.raiseError(err)
-    }
-  }
-
   def toFile(config: C, path: Option[FsFile])(implicit E: EncodeJson[C]): Task[Unit] =
     for {
       codec <- systemCodec

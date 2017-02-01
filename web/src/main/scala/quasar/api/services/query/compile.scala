@@ -28,18 +28,15 @@ import quasar.frontend._
 import quasar.fs._
 import quasar.frontend.logicalplan.{LogicalPlan, LogicalPlanR}
 
-import scala.Predef.$conforms
-
-import scala.Predef.$conforms
-
 import argonaut._, Argonaut._
 import matryoshka._
+import matryoshka.data.Fix
 import org.http4s.dsl._
 import pathy.Path.posixCodec
 import scalaz._, Scalaz._
 
 object compile {
-  private val lpr = new LogicalPlanR[Fix]
+  private val lpr = new LogicalPlanR[Fix[LogicalPlan]]
 
   def service[S[_]](
     implicit
@@ -51,11 +48,6 @@ object compile {
         case PhaseResult.Tree(name, value)   => value.asJson
         case PhaseResult.Detail(name, value) => value.asJson
       }
-
-    def dataResponse(data: List[Data]): QResponse[S] =
-      QResponse.string(Ok,
-        "Results\n" +
-          data.map(_.toJs.toList).flatten.map(_.toJs.pprint(0)).mkString("\n"))
 
     def noOutputError(lp: Fix[LogicalPlan]): ApiError =
       ApiError.apiError(

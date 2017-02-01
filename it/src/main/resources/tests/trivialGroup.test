@@ -1,18 +1,19 @@
 {
     "name": "trivial group by",
     "backends": {
-        "postgresql":        "pending"
+        "mongodb_q_3_2": "pending",
+        "postgresql":    "pending"
     },
-    "description": "Should project the result at the root (not under 'value').",
     "data": "largeZips.data",
     "query": "select city, sum(pop) as totalPop from largeZips group by city",
     "predicate": "containsAtLeast",
-    "ignoreFieldOrder": [
-        "couchbase",
-        "mongodb_2_6",
-        "mongodb_3_0",
-        "mongodb_3_2",
-        "mongodb_read_only"
-    ],
+    "ignoreFieldOrder": ["couchbase",
+                         "mongodb_2_6",
+                         "mongodb_3_0",
+                         "mongodb_3_2",
+                         "mongodb_read_only",
+                         "mongodb_q_3_2",
+                         "spark_local",
+                         "spark_hdfs"],
     "expected": [{ "city": "BOULDER", "totalPop": 110948 }]
 }

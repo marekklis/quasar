@@ -17,17 +17,45 @@
 package quasar
 
 import quasar.Predef.Boolean
-
-import scala.Predef.implicitly
+import quasar.fp.ski._
 
 import java.lang.String
+import scala.Predef.implicitly
+import scala.Unit
+import scala.collection.immutable.{List, ListMap}
+import scala.math.{BigDecimal, BigInt}
 
-import matryoshka._, FunctorT.ops._, Recursive.ops._
+import matryoshka._
+import matryoshka.implicits._
 import monocle.Prism
 import scalaz._
 
 package object ejson {
+  def nul[A] =
+    Prism.partial[Common[A], Unit] { case Null() => () } (κ(Null()))
+  def bool[A] =
+    Prism.partial[Common[A], Boolean] { case Bool(b) => b } (Bool(_))
+  def dec[A] =
+    Prism.partial[Common[A], BigDecimal] { case Dec(bd) => bd } (Dec(_))
   def str[A] = Prism.partial[Common[A], String] { case Str(s) => s } (Str(_))
+  def arr[A] =
+    Prism.partial[Common[A], List[A]] { case Arr(a) => a } (Arr(_))
+
+  def obj[A] =
+    Prism.partial[Obj[A], ListMap[String, A]] { case Obj(o) => o } (Obj(_))
+
+  def byte[A] =
+    Prism.partial[Extension[A], scala.Byte] { case Byte(b) => b } (Byte(_))
+  def char[A] =
+    Prism.partial[Extension[A], scala.Char] { case Char(c) => c } (Char(_))
+  def int[A] =
+    Prism.partial[Extension[A], BigInt] { case Int(i) => i } (Int(_))
+  def map[A] =
+    Prism.partial[Extension[A], List[(A, A)]] { case Map(m) => m } (Map(_))
+  def meta[A] =
+    Prism.partial[Extension[A], (A, A)] {
+      case Meta(v, m) => (v, m)
+    } ((Meta(_: A, _: A)).tupled)
 
   /** For _strict_ JSON, you want something like `Obj[Mu[Json]]`.
     */
@@ -42,16 +70,13 @@ package object ejson {
     def fromJson[A](f: String => A): Json[A] => EJson[A] =
       json => Coproduct(json.run.leftMap(Extension.fromObj(f)))
 
-    def fromJsonT[T[_[_]]: FunctorT: Corecursive]: T[Json] => T[EJson] =
-      _.transAna(fromJson(s => Coproduct.right[Obj](str[T[Json]](s)).embed))
-
-    def fromCommon[T[_[_]]: Corecursive]: Common[T[EJson]] => T[EJson] =
+    def fromCommon[T](implicit T: Corecursive.Aux[T, EJson]): Common[T] => T =
       CommonEJson.inj(_).embed
 
-    def fromExt[T[_[_]]: Corecursive]: Extension[T[EJson]] => T[EJson] =
+    def fromExt[T](implicit T: Corecursive.Aux[T, EJson]): Extension[T] => T =
       ExtEJson.inj(_).embed
 
-    def isNull[T[_[_]]: Recursive](ej: T[EJson]): Boolean =
+    def isNull[T](ej: T)(implicit T: Recursive.Aux[T, EJson]): Boolean =
       CommonEJson.prj(ej.project).fold(false) {
         case ejson.Null() => true
         case _ => false

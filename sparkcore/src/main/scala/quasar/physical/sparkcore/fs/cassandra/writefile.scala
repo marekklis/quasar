@@ -18,7 +18,7 @@ package quasar.physical.sparkcore.fs.cassandra
 
 import quasar.Predef._
 import quasar.contrib.pathy._
-import quasar.{Data, DataCodec, DataEncodingError}
+import quasar.{Data, DataCodec}
 import quasar.effect._
 import quasar.fs._, WriteFile._, FileSystemError._
 import quasar.fp.free._
@@ -102,23 +102,23 @@ object writefile {
     session.execute(stmt.bind(data))
   }
 
-  def write[S[_]](handle: WriteHandle, data: Vector[Data])(implicit
+  def write[S[_]](handle: WriteHandle, chunks: Vector[Data])(implicit
     read: Read.Ops[SparkContext, S]
     ): Free[S, Vector[FileSystemError]] = 
   read.asks{ sc =>
     implicit val codec = DataCodec.Precise
-    val textChunk: Vector[(DataEncodingError \/ String, Data)] = data.map(d => (DataCodec.render(d), d))
+    val textChunk: Vector[(String, Data)] =
+      chunks.map(d => DataCodec.render(d) strengthR d).unite
       
     CassandraConnector(sc.getConf).withSessionDo {implicit session =>
-      textChunk.flatMap{
-        case (\/-(text),data) => 
+      textChunk.flatMap {
+        case (text,data) => 
           \/.fromTryCatchNonFatal{
             insertData(keyspace(handle.file), tableName(handle.file), text)
           }.fold(
             ex => Vector(writeFailed(data, ex.getMessage)),
             u => Vector.empty[FileSystemError]
           )
-        case (-\/(error), data) => Vector(writeFailed(data, error.message))
       }
     }
   }

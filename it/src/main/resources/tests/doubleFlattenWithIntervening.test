@@ -1,15 +1,14 @@
 {
     "name": "double flatten with intervening field",
     "backends": {
+        "couchbase":         "pending",
         "mongodb_read_only": "pending",
         "postgresql":        "pending",
-        "marklogic":         "skip"
+        "spark_hdfs":        "skip",
+        "spark_local":       "skip"
     },
     "data": "nested.data",
     "query": "select topObj{*}.botObj{*} from nested",
     "predicate": "containsExactly",
-    "expected": [{ "botObj": { "$na": null } },
-                 { "botObj": "m"             },
-                 { "botObj": "n"             },
-                 { "botObj": "o"             }]
+    "expected": ["m", "n", "o"]
 }

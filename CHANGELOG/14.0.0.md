@@ -1,0 +1,3 @@
+- A select with a single unaliased field now returns just that value rather than wrapping it in a map.
+- exposes `now()` function and `select … from … sample 100` for random sampling of results
+- MongoDB now handles dates before 1970 correctly.

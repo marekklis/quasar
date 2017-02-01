@@ -41,6 +41,7 @@ class Interpreter[F[_], M[_]: Monad](val interpretTerm: F ~> M) {
   def interpretT2[T1[_[_],_]: Hoist, T2[_[_],_]: Hoist]: T1[T2[Program,?],?] ~> T1[T2[M,?],?] =
     Hoist[T1].hoist[T2[Program,?],T2[M,?]](interpretT[T2])(Hoist[T2].apply[Program])
 
+  // TODO: Add test (Used downstream in QAdv)
   def interpretT3[T1[_[_],_]: Hoist, T2[_[_],_]: Hoist, T3[_[_],_]: Hoist]: T1[T2[T3[Program,?],?],?] ~> T1[T2[T3[M,?],?],?] =
     Hoist[T1].hoist[T2[T3[Program,?],?], T2[T3[M,?],?]](interpretT2[T2,T3])(Hoist[T2].apply[T3[Program,?]](Hoist[T3].apply[Program]))
 
@@ -59,6 +60,7 @@ class Interpreter[F[_], M[_]: Monad](val interpretTerm: F ~> M) {
     p.translate[ResultT](interpretT2[T1,T2]).runLog[ResultT,A](monadR,catchable)
   }
 
+  // TODO: Add test (Used downstream in QAdv)
   def runLogT3[T1[_[_],_]:Hoist, T2[_[_],_]: Hoist, T3[_[_],_]: Hoist ,A](p: Process[T1[T2[T3[Program,?],?],?],A])(implicit catchable: Catchable[T1[T2[T3[M,?],?],?]])
   : T1[T2[T3[M,?],?],Vector[A]] = {
     type ResultT[A] = T1[T2[T3[M,?],?],A]

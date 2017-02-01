@@ -50,12 +50,8 @@ object queryfile {
 
       val connector = CassandraConnector(sc.getConf)
       connector.withSessionDo { implicit session =>
-        rdd.map(data => DataCodec.render(data)(DataCodec.Precise)).collect().foreach {
-          case \/-(v) =>
-            insertData(ks, tb, v)
-          case -\/(der) =>
-            // what should we do with error?
-        }
+        rdd.flatMap(data =>
+          DataCodec.render(data)(DataCodec.Precise).toList).collect().foreach (v => insertData(ks, tb, v))
       }
     }
 

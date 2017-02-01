@@ -18,21 +18,25 @@ package quasar.qscript
 
 import quasar.Predef._
 import quasar.{Data, UnaryFunc, BinaryFunc, TernaryFunc, Mapping}
+import quasar.fp._
 import quasar.fp.ski.κ
 import quasar.fp.tree.{UnaryArg, BinaryArg, TernaryArg}
-import quasar.frontend.{logicalplan => lp}, lp.{LogicalPlan => LP}
-import quasar.frontend.fixpoint.lpf
+import quasar.frontend.{logicalplan => lp}, lp.{LogicalPlan => LP, LogicalPlanR}
 import quasar.std._
 
 import scala.sys
 
-import matryoshka._, Recursive.ops._
+import matryoshka._
+import matryoshka.data.Fix
+import matryoshka.implicits._
 import org.specs2.execute.Result
+
 import scalaz._, Scalaz._
 import shapeless.Sized
 
 /** The operations needed to execute the various StdLib tests for a QScript backend. */
 trait MapFuncStdLibTestRunner extends StdLibTestRunner {
+  val lpf = new LogicalPlanR[Fix[LP]]
 
   def nullaryMapFunc(
     prg: FreeMapA[Fix, Nothing],
@@ -57,6 +61,8 @@ trait MapFuncStdLibTestRunner extends StdLibTestRunner {
     expected: Data
   ): Result
 
+  val qsr = new Transform[Fix, QScriptTotal[Fix, ?]]
+
   /** Translate to MapFunc (common to all QScript backends). */
   def translate[A](prg: Fix[LP], args: Symbol => A): Free[MapFunc[Fix, ?], A] =
     prg.cata[Free[MapFunc[Fix, ?], A]] {
@@ -73,6 +79,14 @@ trait MapFuncStdLibTestRunner extends StdLibTestRunner {
         Free.roll(MapFunc.translateTernaryMapping(func)(a1, a2, a3))
 
       case lp.Free(sym) => Free.pure(args(sym))
+
+      case lp.Constant(data) =>
+        qsr.fromData(data).fold(
+          _ => sys.error("invalid Data"),
+          ej => Free.roll(MapFuncs.Constant[Fix, Free[MapFunc[Fix, ?], A]](ej)))
+
+      case lp.TemporalTrunc(part, src) =>
+        Free.roll(MapFuncs.TemporalTrunc(part, src))
     }
 
   def absurd[A, B](a: A): B = sys.error("impossible!")

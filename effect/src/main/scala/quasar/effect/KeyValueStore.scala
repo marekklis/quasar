@@ -51,10 +51,6 @@ object KeyValueStore {
   final class Ops[K, V, S[_]](implicit S: KeyValueStore[K, V, ?] :<: S)
     extends LiftedOps[KeyValueStore[K, V, ?], S] {
 
-    /** Similar to `alterS`, but returns the updated value. */
-    def alter(k: K, f: Option[V] => V): F[V] =
-      alterS(k, v => f(v).squared)
-
     /** Atomically associates the given key with the first part of the result
       * of applying the given function to the value currently associated with
       * the key, returning the second part of the result.

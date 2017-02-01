@@ -135,7 +135,6 @@ private object JavascriptPrinter {
     def p(ast: Js) = print(ast, indent)
     def p2(ast: Js) = ind(2) + p3(ast)
     def p3(ast: Js) = print(ast, indent + 2)
-    def p4(ast: Js) = ind(0) + p(ast)
     def s(ast: Js) = ast match {
       case _: Lit => p(ast)
       case _: Ident => p(ast)

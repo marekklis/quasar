@@ -16,10 +16,14 @@
 
 package quasar.regression
 
-import scala.Predef.$conforms
 import quasar.Predef._
+import quasar.fp._
+
+import scala.None
+import scala.Predef.$conforms
 
 import argonaut._, Argonaut._
+import matryoshka._
 import org.specs2.execute._
 import org.specs2.matcher._
 import scalaz.{Failure => _, _}, Scalaz._
@@ -37,6 +41,7 @@ object Predicate {
   import MustMatchers._
   import StandardResults._
   import DecodeResult.{ok => jok, fail => jfail}
+
 
   def matchJson(expected: Option[Json]): Matcher[Option[Json]] = new Matcher[Option[Json]] {
     def apply[S <: Option[Json]](s: Expectable[S]) = {

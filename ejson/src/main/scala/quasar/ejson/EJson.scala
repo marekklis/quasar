@@ -79,6 +79,13 @@ object Common {
 final case class Obj[A](value: ListMap[String, A])
 
 object Obj {
+  // TODO: This means we have the same names for the projection and the Obj
+  //       pattern matcher. It could go away if this unapply were defined on
+  //       `scalaz.Inject`. (scalaz/scalaz#1311)
+  @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
+  def unapply[F[_], A](fa: F[A])(implicit O: Obj :<: F): Option[Obj[A]] =
+    O.prj(fa)
+
   implicit val traverse: Traverse[Obj] = new Traverse[Obj] {
     def traverseImpl[G[_]: Applicative, A, B](fa: Obj[A])(f: A => G[B]):
         G[Obj[B]] =

@@ -21,13 +21,14 @@ import quasar.fp._
 import quasar.frontend.logicalplan.{LogicalPlan, Optimizer}
 
 import matryoshka._
+import matryoshka.data.Fix
 import org.specs2.matcher._
 import scalaz._, Scalaz._
 
 trait TermLogicalPlanMatchers {
   case class equalToPlan(expected: Fix[LogicalPlan])
       extends Matcher[Fix[LogicalPlan]] {
-    val optimizer = new Optimizer[Fix]
+    val optimizer = new Optimizer[Fix[LogicalPlan]]
 
     def apply[S <: Fix[LogicalPlan]](s: Expectable[S]) = {
       val normed = optimizer.simplify(s.value)

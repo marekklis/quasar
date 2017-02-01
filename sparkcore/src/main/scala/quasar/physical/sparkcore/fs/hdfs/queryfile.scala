@@ -66,14 +66,10 @@ class queryfile(fileSystem: Task[FileSystem]) {
     })
     val bw = new BufferedWriter(new OutputStreamWriter(os, "UTF-8"))
 
-    rdd.map(data => DataCodec.render(data)(DataCodec.Precise)).collect().foreach {
-      case \/-(v) =>
+    rdd.flatMap(DataCodec.render(_)(DataCodec.Precise).toList).collect().foreach(v => {
         bw.write(v)
         bw.newLine()
-      case -\/(der) =>
-        bw.write(s"encoding error: ${der.message}")
-        bw.newLine()
-    }
+    })
     bw.close()
     hdfs.close()
   }).into[S]

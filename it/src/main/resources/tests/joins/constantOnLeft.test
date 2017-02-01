@@ -1,20 +1,24 @@
 {
-  "name": "join where the left hand side is constant",
+    "name": "join where the left hand side is constant",
 
-  "backends": {
-    "mongodb_read_only": "pending",
-    "postgresql":        "pending",
-    "marklogic":         "skip",
-    "couchbase":         "skip"
-  },
+    "backends": {
+        "couchbase":         "skip",
+        "marklogic_json":    "skip",
+        "marklogic_xml":     "skip",
+        "mongodb_read_only": "pending",
+        "mongodb_q_3_2":     "pending",
+        "postgresql":        "pending",
+        "spark_local":       "skip",
+        "spark_hdfs":        "skip"
+    },
 
-  "data": "../largeZips.data",
+    "data": ["../smallZips.data", "../zips.data"],
 
-  "query": "select a.city, b.state from `../largeZips` as a, `../largeZips` as b where a._id = b._id
-            and \"CA\" = b.state",
+    "query": "select smallZips.city, zips.state from `../smallZips`, `../zips` where smallZips._id = zips._id
+            and \"MA\" = zips.state",
 
-  "predicate": "containsAtLeast",
-  "expected": [
-    { "city": "REDONDO BEACH", "state": "CA" }
-  ]
+    "predicate": "containsAtLeast",
+
+    "expected": [{ "city": "AGAWAM",  "state": "MA" },
+                 { "city": "CUSHMAN", "state": "MA" }]
 }

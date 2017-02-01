@@ -17,13 +17,15 @@
 package quasar.std
 
 import quasar.Predef._
-import quasar.{Data, Func, UnaryFunc, BinaryFunc, TernaryFunc, Type, Mapping, SemanticError},
-  SemanticError._
+import quasar._, SemanticError._
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 
+import java.time.ZoneOffset.UTC
+
 import matryoshka._
+import matryoshka.implicits._
 import scalaz._, Scalaz._, Validation.{success, failureNel}
 import shapeless.{Data => _, :: => _, _}
 
@@ -44,7 +46,9 @@ trait StringLib extends Library {
     Type.Str,
     Func.Input2(Type.Str, Type.Str),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
+      def apply[T]
+        (orig: LP[T])
+        (implicit TR: Recursive.Aux[T, LP], TC: Corecursive.Aux[T, LP]) =
         orig match {
           case InvokeUnapply(_, Sized(Embed(Constant(Data.Str(""))), Embed(second))) =>
             second.some
@@ -93,15 +97,17 @@ trait StringLib extends Library {
     Type.Bool,
     Func.Input3(Type.Str, Type.Str, Type.Str),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
+      def apply[T]
+        (orig: LP[T])
+        (implicit TR: Recursive.Aux[T, LP], TC: Corecursive.Aux[T, LP]) =
         orig match {
           case InvokeUnapply(_, Sized(Embed(str), Embed(Constant(Data.Str(pat))), Embed(Constant(Data.Str(esc))))) =>
             if (esc.length > 1)
               None
             else
               Search(str.embed,
-                constant[T[LP]](Data.Str(regexForLikePattern(pat, esc.headOption))).embed,
-                constant[T[LP]](Data.Bool(false)).embed).some
+                constant[T](Data.Str(regexForLikePattern(pat, esc.headOption))).embed,
+                constant[T](Data.Bool(false)).embed).some
           case _ => None
         }
     },
@@ -182,7 +188,9 @@ trait StringLib extends Library {
     Type.Str,
     Func.Input3(Type.Str, Type.Int, Type.Int),
     new Func.Simplifier {
-      def apply[T[_[_]]: Recursive: Corecursive](orig: LP[T[LP]]) =
+      def apply[T]
+        (orig: LP[T])
+        (implicit TR: Recursive.Aux[T, LP], TC: Corecursive.Aux[T, LP]) =
         orig match {
           case InvokeUnapply(f @ TernaryFunc(_, _, _, _, _, _, _), Sized(
             Embed(Constant(Data.Str(str))),
@@ -190,8 +198,8 @@ trait StringLib extends Library {
             for0))
               if 0 < from =>
             Invoke(f, Func.Input3(
-              Constant[T[LP]](Data.Str(str.substring(from.intValue))).embed,
-              Constant[T[LP]](Data.Int(0)).embed,
+              Constant[T](Data.Str(str.substring(from.intValue))).embed,
+              Constant[T](Data.Int(0)).embed,
               for0)).some
           case _ => None
         }
@@ -313,9 +321,9 @@ trait StringLib extends Library {
         case Data.Bool(b)      => success(b.shows)
         case Data.Int(i)       => success(i.shows)
         case Data.Dec(d)       => success(d.shows)
-        case Data.Timestamp(t) => success(t.toString)
+        case Data.Timestamp(t) => success(t.atZone(UTC).format(DataCodec.dateTimeFormatter))
         case Data.Date(d)      => success(d.toString)
-        case Data.Time(t)      => success(t.toString)
+        case Data.Time(t)      => success(t.format(DataCodec.timeFormatter))
         case Data.Interval(i)  => success(i.toString)
         // NB: Should not be able to hit this case, because of the domain.
         case other             =>

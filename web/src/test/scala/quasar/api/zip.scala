@@ -33,7 +33,7 @@ import pathy.Path._
 import quasar.fp.numeric._
 import pathy.scalacheck.PathyArbitrary._
 
-import eu.timepit.refined.numeric.{Positive => RPositive, NonNegative}
+import eu.timepit.refined.numeric.{Positive => RPositive}
 import eu.timepit.refined.scalacheck.numeric._
 import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
@@ -47,8 +47,6 @@ class ZipSpecs extends quasar.Qspec {
     // amount of time and without Java heap space errors.
     implicit val reasonablePositive: Arbitrary[Positive] =
       Arbitrary(chooseRefinedNum[Refined, Long, RPositive](1L, 1000L))
-    implicit val reasonableNatural: Arbitrary[Natural] =
-      Arbitrary(chooseRefinedNum[Refined, Long, NonNegative](0L, 1000L))
 
     def rand = new java.util.Random
     def randBlock = Array.fill[Byte](1000)(rand.nextInt.toByte)
