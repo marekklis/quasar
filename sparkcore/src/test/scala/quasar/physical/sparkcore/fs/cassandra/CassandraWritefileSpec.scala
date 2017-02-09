@@ -53,28 +53,33 @@ class CassandraWritefileSpec extends quasar.Qspec {
 			ok
 		}
 
-		"write should insert data into table" in {
-			val aFile = rootDir </> dir("foo") </> file("bar")
-			val data = (user("john", 31) :: user("anna", 21) :: Nil).toVector
-			val openFileProgram: Free[Eff, FileSystemError \/ WriteHandle] = writefile.open(aFile)
-			val writeProgram: Free[Eff, Vector[FileSystemError]] = writefile.write(WriteHandle(aFile, 1L), data)
-			val sc = newSc()
+	  "write should insert data into table" in {
+	    val aFile = rootDir </> dir("foo") </> file("bar")
+	    val data = (user("john", 31) :: user("anna", 21) :: Nil).toVector
+	    val openFileProgram: Free[Eff, FileSystemError \/ WriteHandle] = writefile.open(aFile)
+	    val writeProgram: Free[Eff, Vector[FileSystemError]] = writefile.write(WriteHandle(aFile, 1L), data)
+            val program =  for {
+              _ <- openFileProgram
+              r <- writeProgram
+            } yield r
 
-			def monotonicSeqInter: Task[MonotonicSeq ~> Task] = TaskRef(0L).map( MonotonicSeq.fromTaskRef _ )
+	    val sc = newSc()
 
- 	 		val readInter: Read[SparkContext, ?] ~> Task = Read.constant[Task, SparkContext](sc)
-			
-			val interpreter: Task[Eff ~> Task] = monotonicSeqInter.map(_ :+: readInter)
+	    def monotonicSeqInter: Task[MonotonicSeq ~> Task] = TaskRef(0L).map( MonotonicSeq.fromTaskRef _ )
 
-			val result: Vector[FileSystemError] = 
-				interpreter
-					.map(writeProgram foldMap _)
-					.join
-					.unsafePerformSync
-			sc.stop()
+ 	    val readInter: Read[SparkContext, ?] ~> Task = Read.constant[Task, SparkContext](sc)
+	    
+	    val interpreter: Task[Eff ~> Task] = monotonicSeqInter.map(_ :+: readInter)
 
-			result must_= Vector.empty[FileSystemError]
-		}
+	    val result: Vector[FileSystemError] =
+	      interpreter
+		.map(program foldMap _)
+		.join
+		.unsafePerformSync
+	    sc.stop()
+
+	    result must_= Vector.empty[FileSystemError]
+	  }
 	}
 
 	  private def newSc(): SparkContext = {
