@@ -123,7 +123,7 @@ object managefile {
     ): Free[S, FileSystemError \/ AFile] = 
     read.asks { sc =>
       CassandraConnector(sc.getConf).withSessionDo { implicit session =>
-        val randomFileName = s"quasar-${scala.util.Random.nextInt()}.tmp"
+        val randomFileName = s"quasar${scala.math.abs(scala.util.Random.nextInt())}"
         val aDir: ADir = refineType(near).fold(d => d, fileParent(_))
         if (!keyspaceExists(keyspace(near))) {
           val r = createTable(keyspace(near), randomFileName)
