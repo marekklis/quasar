@@ -16,7 +16,7 @@
 
 package quasar.api
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import quasar.{Data, DataCodec}
 import quasar.csv._
@@ -34,7 +34,7 @@ import scalaz._, Scalaz._
 import scalaz.concurrent.Task
 import scalaz.stream.Process
 
-sealed trait JsonPrecision extends Product with Serializable {
+sealed abstract class JsonPrecision extends Product with Serializable {
   def codec: DataCodec
   def name: String
 }
@@ -48,7 +48,7 @@ object JsonPrecision {
     val name = "precise"
   }
 }
-sealed trait JsonFormat extends Product with Serializable {
+sealed abstract class JsonFormat extends Product with Serializable {
   def mediaType: MediaType
 }
 object JsonFormat {
@@ -68,8 +68,10 @@ object DecodeError {
 
 trait Decoder {
   def mediaType: MediaType
+  @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
   def decode(txt: String): DecodeError \/ Process[Task, DecodeError \/ Data]
   /* Does not decode in a streaming fashion */
+  @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
   def decode(txtStream: Process[Task,String]): Task[DecodeError \/ Process[Task, DecodeError \/ Data]] =
     txtStream.runLog.map(_.mkString).map(decode(_))
   /* Not a streaming decoder */
@@ -78,12 +80,13 @@ trait Decoder {
   }
 }
 
-sealed trait MessageFormat extends Decoder {
+sealed abstract class MessageFormat extends Decoder {
   def disposition: Option[`Content-Disposition`]
   def encode[F[_]](data: Process[F, Data]): Process[F, String]
   protected def dispositionExtension: Map[String, String] =
     disposition.map(disp => Map("disposition" -> disp.value)).getOrElse(Map.empty)
 }
+
 object MessageFormat {
   final case class JsonContentType(
     mode: JsonPrecision,
@@ -92,7 +95,7 @@ object MessageFormat {
   ) extends MessageFormat {
     val LineSep = "\r\n"
     def mediaType = {
-      val extensions = Map("mode" -> mode.name) ++ dispositionExtension
+      val extensions = Map("mode" -> mode.name)
       format.mediaType.withExtensions(extensions)
     }
     override def encode[F[_]](data: Process[F, Data]): Process[F, String] = {
@@ -127,6 +130,7 @@ object MessageFormat {
   }
 
   object JsonContentType {
+    @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
     def apply(mode: JsonPrecision, format: JsonFormat): JsonContentType = JsonContentType(mode, format, disposition = None)
   }
 

@@ -16,7 +16,8 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
+import quasar.contrib.scalaz.MonadError_
 import quasar.contrib.pathy.ADir
 import quasar.fp._
 import quasar.fs.PathError
@@ -30,7 +31,13 @@ import scalaz._, Scalaz._
 import shapeless.Nat
 
 object Planner {
-  sealed trait PlannerError {
+  type PlannerErrorME[F[_]] = MonadError_[F, PlannerError]
+
+  object PlannerErrorME {
+    def apply[F[_]](implicit F: PlannerErrorME[F]) = F
+  }
+
+  sealed abstract class PlannerError {
     def message: String
   }
 
@@ -81,6 +88,10 @@ object Planner {
       }
   }
 
+  final case class CompilationFailed(semErrs: NonEmptyList[SemanticError]) extends PlannerError {
+    def message = "Compilation failed: " + semErrs.list.toList.mkString(", ")
+  }
+
   final case class InternalError(msg: String, cause: Option[Exception]) extends PlannerError {
     def message = msg + ~cause.map(ex => s" (caused by: $ex)")
   }
@@ -89,6 +100,9 @@ object Planner {
     def fromMsg(msg: String): PlannerError = apply(msg, None)
   }
 
+  def UnexpectedJoinSide(n: Symbol): PlannerError =
+    InternalError.fromMsg(s"Unexpected JoinSideName ${n.shows} should have been removed in qscript compilation.")
+
   implicit val PlannerErrorRenderTree: RenderTree[PlannerError] = new RenderTree[PlannerError] {
     def render(v: PlannerError) = Terminal(List("Error"), Some(v.message))
   }
@@ -96,7 +110,7 @@ object Planner {
   implicit val plannerErrorShow: Show[PlannerError] =
     Show.show(_.message)
 
-  sealed trait CompilationError {
+  sealed abstract class CompilationError {
     def message: String
   }
   object CompilationError {

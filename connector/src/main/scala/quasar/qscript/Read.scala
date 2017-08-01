@@ -16,7 +16,7 @@
 
 package quasar.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp._
 import quasar.RenderTree
 import quasar.contrib.pathy.APath

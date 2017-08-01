@@ -16,7 +16,7 @@
 
 package quasar.physical.sparkcore.fs.hdfs.parquet
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, Qspec}
 import quasar.fp._
 
@@ -63,42 +63,124 @@ class DataReadSupportSpec extends Qspec {
       )
     }
 
-    "read logical types" in {
+    "read logical types: UTF8, DATE, TIME_MILIS, TIME_MICROS, TIMESTAMP_MILIS, TIMESTAMP_MICROS" in {
       val data = readAll(path("/test-data-2.parquet")).unsafePerformSync
       data must_= Vector(
         Data.Obj(
           "description" -> Data.Str("this is a description"),
-          "creation" -> Data.Date(LocalDate.of(2017,2,3)),
-          "creationTimestamp" -> Data.Timestamp(Instant.parse("2017-02-03T15:53:44.851Z")),
-          "meetingTime" -> Data.Time(LocalTime.of(0,0,0,400000))
+          "creation" -> Data.Date(LocalDate.of(2017,2,17)),
+          "creationStamp" -> Data.Timestamp(Instant.parse("2017-02-17T13:42:05.017Z")),
+          "meetingTime" -> Data.Time(LocalTime.of(0,0,4,0)),
+          "creationStampMicros" -> Data.Timestamp(Instant.parse("2017-02-17T13:42:05.017Z")),
+          "meetingTimeMicros" -> Data.Time(LocalTime.of(0,0,4,0))
         )
       )
     }
 
-    "read lists" in {
-      val data = readAll(path("/test-data-4.parquet")).unsafePerformSync
+    "read JSON type" in {
+      val data = readAll(path("/test-data-9.parquet")).unsafePerformSync
       data must_= Vector(
         Data.Obj(
-          "skills" -> Data.Arr(List(
-            Data.Str("scala"),
-            Data.Str("FP"),
-            Data.Str("spillikins")
-          ))
+          "document" -> Data.Obj(
+            "name" -> Data.Str("hello"),
+            "a" -> Data.Int(10)
+          ),
+          "invalid_document" -> Data.NA
         )
       )
     }
 
-    "read lists alternative" in {
-      val data = readAll(path("/test-data-3.parquet")).unsafePerformSync
-      data must_= Vector(
-        Data.Obj(
-          "skills" -> Data.Arr(List(
-            Data.Obj("element" -> Data.Str("scala")),
-            Data.Obj("element" -> Data.Str("FP")),
-            Data.Obj("element" -> Data.Str("spillikins"))
-          ))
+    "lists" should {
+      "be read" in {
+        val data = readAll(path("/test-data-5.parquet")).unsafePerformSync
+        data must_= Vector(
+          Data.Obj(
+            "skills" -> Data.Arr(List(
+              Data.Str("scala"),
+              Data.Str("FP"),
+              Data.Str("spillikins")
+            ))
+          )
         )
-      )
+      }
+
+      "be read even if data is not following LIST specification" in {
+        val data = readAll(path("/test-data-4.parquet")).unsafePerformSync
+        data must_= Vector(
+          Data.Obj(
+            "skills" -> Data.Arr(List(
+              Data.Str("scala"),
+              Data.Str("FP"),
+              Data.Str("spillikins")
+            ))
+          )
+        )
+      }      
+    }
+
+    "map" should {
+      "be read" in {
+        val data = readAll(path("/test-data-6.parquet")).unsafePerformSync
+        data must_= Vector(
+          Data.Obj(
+            "skills" -> Data.Obj(ListMap(
+              "scala" -> Data.Str("good"),
+              "FP" -> Data.Str("very good"),
+              "spillikins" -> Data.Str("bad")
+            ))
+          )
+        )
+      }
+
+      "be read even if data is not following MAP spec - it does not contain 'key_value' entry" in {
+        val data = readAll(path("/test-data-7.parquet")).unsafePerformSync
+        data must_= Vector(
+          Data.Obj(
+            "skills" -> Data.Obj(ListMap(
+              "scala" -> Data.Str("good"),
+              "FP" -> Data.Str("very good"),
+              "spillikins" -> Data.Str("bad")
+            ))
+          )
+        )
+      }
+
+
+      "be read even if data is not following MAP spec - has extrac entries beside 'key' & 'value'" in {
+        val data = readAll(path("/test-data-10.parquet")).unsafePerformSync
+        data must_= Vector(
+          Data.Obj(
+            "skills" -> Data.Arr(List(
+              Data.Obj(
+                "key" -> Data.Str("scala"),
+                "value" -> Data.Str("good"),
+                "desc" -> Data.Str("some description")
+              ),
+              Data.Obj(
+                "key" -> Data.Str("FP"),
+                "value" -> Data.Str("very good")
+              ),
+              Data.Obj(
+                "key" -> Data.Str("spillikins"),
+                "value" -> Data.Str("bad")
+              )
+            ))
+          )
+        )
+      }
+
+      "be read even if data is using outdated MAP_KEY_VALUE label" in {
+        val data = readAll(path("/test-data-8.parquet")).unsafePerformSync
+        data must_= Vector(
+          Data.Obj(
+            "skills" -> Data.Obj(ListMap(
+              "scala" -> Data.Str("good"),
+              "FP" -> Data.Str("very good"),
+              "spillikins" -> Data.Str("bad")
+            ))
+          )
+        )
+      }
     }
   }
 }

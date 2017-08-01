@@ -16,7 +16,7 @@
 
 package quasar.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import scalaz._, Scalaz._
 
 /** This is like [[scalaz.Inject]], but for injecting an arbitrary coproduct

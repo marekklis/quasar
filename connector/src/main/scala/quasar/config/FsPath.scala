@@ -16,7 +16,7 @@
 
 package quasar.config
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp.ski._
 
 import scalaz._, Scalaz._
@@ -24,7 +24,7 @@ import scalaz.concurrent.Task
 import Leibniz.===
 import pathy._, Path._
 
-sealed trait FsPath[T, S] {
+sealed abstract class FsPath[T, S] {
   type Base
 
   def fold[X](uni: Path[Base, T, S] => X, inv: (String, Path[Base, T, S], Base === Abs) => X): X

@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.contrib.pathy._
 import quasar.fp.TaskRef
 import quasar.fp.numeric.{Natural, Positive}
@@ -106,8 +106,8 @@ object readfile {
     def openCursor0(c: Collection): MongoRead[ReadHandle] =
       for {
         it   <- find(c).liftM[ReadStateT]
-        skpd =  it skip off.get.toInt
-        ltd  =  lim cata (n => skpd.limit(n.get.toInt), skpd)
+        skpd =  it skip off.value.toInt
+        ltd  =  lim cata (n => skpd.limit(n.value.toInt), skpd)
         cur  <- async(ltd.batchCursor).liftM[ReadStateT]
         h    <- recordCursor(f, cur)
       } yield h

@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xcc
 
-import quasar.Predef.Unit
+import slamdata.Predef.Unit
 import quasar.fp.ski.κ
 
 import monocle.Iso

@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import java.lang.SuppressWarnings
 
@@ -109,9 +109,11 @@ object expr {
   }
 
   final case class TypeswitchExpr(on: XQuery, cases: List[TypeswitchCaseClause]) {
+    @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
     def default(xqy: XQuery): XQuery =
       default(TypeswitchDefaultClause(None, xqy))
 
+    @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
     def default(binding: BindingName, f: XQuery => XQuery): XQuery =
       default(TypeswitchDefaultClause(Some(binding), f(~binding)))
 

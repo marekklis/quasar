@@ -16,7 +16,7 @@
 
 package quasar.contrib.scalaz
 
-import quasar.Predef.Throwable
+import slamdata.Predef.Throwable
 
 import scalaz._, Scalaz._
 

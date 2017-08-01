@@ -16,7 +16,7 @@
 
 package quasar.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.contrib.pathy._
 import quasar.fp.numeric.{Natural, Positive}
 import eu.timepit.refined.auto._
@@ -34,7 +34,7 @@ import scalaz.syntax.show._
 import scalaz.syntax.std.option._
 import scalaz.stream._
 
-sealed trait ReadFile[A]
+sealed abstract class ReadFile[A]
 
 object ReadFile {
   final case class ReadHandle(file: AFile, id: Long)
@@ -59,7 +59,7 @@ object ReadFile {
     extends ReadFile[Unit]
 
   final class Ops[S[_]](implicit val unsafe: Unsafe[S]) {
-    type F[A] = unsafe.F[A]
+    type F[A] = unsafe.FreeS[A]
     type M[A] = unsafe.M[A]
 
     /** Returns a process which produces data from the given file, beginning
@@ -70,7 +70,7 @@ object ReadFile {
       // TODO: use DataCursor.process for the appropriate cursor type
       def closeHandle(h: ReadHandle): Process[M, Nothing] =
         Process.eval_[M, Unit](unsafe.close(h).liftM[FileSystemErrT])
-
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def readUntilEmpty(h: ReadHandle): Process[M, Data] =
         Process.await(unsafe.read(h)) { data =>
           if (data.isEmpty)
@@ -100,7 +100,7 @@ object ReadFile {
   final class Unsafe[S[_]](implicit S: ReadFile :<: S)
     extends LiftedOps[ReadFile, S] {
 
-    type M[A] = FileSystemErrT[F, A]
+    type M[A] = FileSystemErrT[FreeS, A]
 
     /** Returns a read handle for the given file, positioned at the given
       * zero-indexed offset, that may be used to read chunks of data from the
@@ -121,7 +121,7 @@ object ReadFile {
       EitherT(lift(Read(rh)))
 
     /** Closes the given read handle, freeing any resources it was using. */
-    def close(rh: ReadHandle): F[Unit] =
+    def close(rh: ReadHandle): FreeS[Unit] =
       lift(Close(rh))
   }
 

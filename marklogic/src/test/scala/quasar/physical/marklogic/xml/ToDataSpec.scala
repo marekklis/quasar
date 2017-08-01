@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xml
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.Data._
 
 class ToDataSpec extends quasar.Qspec {

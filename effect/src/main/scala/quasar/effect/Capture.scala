@@ -16,7 +16,7 @@
 
 package quasar.effect
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import scalaz._, concurrent.Task
 import scalaz.syntax.monad._

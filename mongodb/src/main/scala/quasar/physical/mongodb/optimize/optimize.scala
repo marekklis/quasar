@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.jscore._
 import quasar.fp._
 import quasar.fp.ski._
@@ -33,22 +33,23 @@ package object optimize {
   object pipeline {
     import fixExprOp._
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     private def deleteUnusedFields0[F[_]: Functor: Refs](op: Fix[F], usedRefs: Option[Set[DocVar]])
       (implicit I: WorkflowOpCoreF :<: F): Fix[F] = {
-      def getRefs[A](op: F[Fix[F]], prev: Option[Set[DocVar]]):
+      def getRefs[A](op: F[_], prev: Option[Set[DocVar]]):
           Option[Set[DocVar]] = op match {
-        case $group(_, _, _)           => Some(Refs[F].refs(op).toSet)
+        case I($GroupF(_, _, _))           => Some(Refs[F].refs(op).toSet)
         // FIXME: Since we can’t reliably identify which fields are used by a
         //        JS function, we need to assume they all are, until we hit the
         //        next $GroupF or $ProjectF.
-        case $map(_, _, _)             => None
-        case $simpleMap(_, _, _)       => None
-        case $flatMap(_, _, _)         => None
-        case $reduce(_, _, _)          => None
-        case $project(_, _, IncludeId) => Some(Refs[F].refs(op).toSet + IdVar)
-        case $project(_, _, _)         => Some(Refs[F].refs(op).toSet)
-        case $foldLeft(_, _)           => prev.map(_ + IdVar)
-        case _                         => prev.map(_ ++ Refs[F].refs(op))
+        case I($MapF(_, _, _))             => None
+        case I($SimpleMapF(_, _, _))       => None
+        case I($FlatMapF(_, _, _))         => None
+        case I($ReduceF(_, _, _))          => None
+        case I($ProjectF(_, _, IncludeId)) => Some(Refs[F].refs(op).toSet + IdVar)
+        case I($ProjectF(_, _, _))         => Some(Refs[F].refs(op).toSet)
+        case I($FoldLeftF(_, _))           => prev.map(_ + IdVar)
+        case _                             => prev.map(_ ++ Refs[F].refs(op))
       }
 
       def unused(defs: Set[DocVar], refs: Set[DocVar]): Set[DocVar] =
@@ -66,13 +67,13 @@ package object optimize {
           val unusedRefs =
             unused(getDefs(op.unFix), usedRefs).toList.flatMap(_.deref.toList)
           op.unFix match {
-            case WorkflowOpCoreF(p @ $ProjectF(_, _, _))   =>
+            case I(p @ $ProjectF(_, _, _))   =>
               val p1 = p.deleteAll(unusedRefs)
               if (p1.shape.value.isEmpty) p1.pipeline.src.unFix
               else I.inj(p1)
-            case WorkflowOpCoreF(g @ $GroupF(_, _, _))     => I.inj(g.deleteAll(unusedRefs.map(_.flatten.head)))
-            case WorkflowOpCoreF(s @ $SimpleMapF(_, _, _)) => I.inj(s.deleteAll(unusedRefs))
-            case o                                     => o
+            case I(g @ $GroupF(_, _, _))     => I.inj(g.deleteAll(unusedRefs.map(_.flatten.head)))
+            case I(s @ $SimpleMapF(_, _, _)) => I.inj(s.deleteAll(unusedRefs))
+            case o                           => o
           }
         }
 
@@ -88,7 +89,7 @@ package object optimize {
       */
     private def simplifyGroupƒ[F[_]: Coalesce: Functor](implicit ev: WorkflowOpCoreF :<: F):
         F[Fix[F]] => Option[F[Fix[F]]] = {
-      case $group(src, Grouped(cont), id) =>
+      case ev($GroupF(src, Grouped(cont), id)) =>
         val (newCont, proj) =
           cont.foldLeft[(ListMap[BsonField.Name, AccumOp[Fix[ExprOp]]], ListMap[BsonField.Name, Reshape.Shape[ExprOp]])](
             (ListMap(), ListMap())) {
@@ -125,7 +126,7 @@ package object optimize {
     def simplifyGroup[F[_]: Coalesce: Functor](op: Fix[F])(implicit ev: WorkflowOpCoreF :<: F): Fix[F] =
       op.transCata[Fix[F]](orOriginal(simplifyGroupƒ[F]))
 
-    private def reorderOpsƒ[F[_]: Coalesce](implicit I: WorkflowOpCoreF :<: F)
+    private def reorderOpsƒ[F[_]: Coalesce: Functor](implicit I: WorkflowOpCoreF :<: F)
         : F[Fix[F]] => Option[F[Fix[F]]] = {
       def rewriteSelector(sel: Selector, defs: Map[DocVar, DocVar]): Option[Selector] =
         sel.mapUpFieldsM { f =>
@@ -138,25 +139,25 @@ package object optimize {
         }
 
       {
-        case $skip(Fix($project(src0, shape, id)), count) =>
+        case I($SkipF(Embed(I($ProjectF(src0, shape, id))), count)) =>
           chain(src0,
             $skip[F](count),
-            $project[F](shape, id)).unFix.some
-        case $skip(Fix($simpleMap(src0, fn @ NonEmptyList(MapExpr(_), INil()), scope)), count) =>
+            $project[F](shape, id)).project.some
+        case I($SkipF(Embed(I($SimpleMapF(src0, fn @ NonEmptyList(MapExpr(_), INil()), scope))), count)) =>
           chain(src0,
             $skip[F](count),
-            $simpleMap[F](fn, scope)).unFix.some
+            $simpleMap[F](fn, scope)).project.some
 
-        case $limit(Fix($project(src0, shape, id)), count) =>
+        case I($LimitF(Embed(I($ProjectF(src0, shape, id))), count)) =>
           chain(src0,
             $limit[F](count),
-            $project[F](shape, id)).unFix.some
-        case $limit(Fix($simpleMap(src0, fn @ NonEmptyList(MapExpr(_), INil()), scope)), count) =>
+            $project[F](shape, id)).project.some
+        case I($LimitF(Embed(I($SimpleMapF(src0, fn @ NonEmptyList(MapExpr(_), INil()), scope))), count)) =>
           chain(src0,
             $limit[F](count),
-            $simpleMap[F](fn, scope)).unFix.some
+            $simpleMap[F](fn, scope)).project.some
 
-        case $match(Fix(WorkflowOpCoreF(p @ $ProjectF(src0, shape, id))), sel) =>
+        case I($MatchF(Embed(I(p @ $ProjectF(src0, shape, id))), sel)) =>
           val defs = p.getAll.collect {
             case (n, $var(x))    => DocField(n) -> x
             case (n, $include()) => DocField(n) -> DocField(n)
@@ -164,10 +165,11 @@ package object optimize {
           rewriteSelector(sel, defs).map(sel =>
             chain(src0,
               $match[F](sel),
-              $project[F](shape, id)).unFix)
+              $project[F](shape, id)).project)
 
-        case $match(Fix($simpleMap(src0, exprs @ NonEmptyList(MapExpr(jsFn), INil()), scope)), sel) => {
+        case I($MatchF(Embed(I($SimpleMapF(src0, exprs @ NonEmptyList(MapExpr(jsFn), INil()), scope))), sel)) => {
           import quasar.javascript._
+          @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
           def defs(expr: JsCore): Map[DocVar, DocVar] =
             expr.simplify match {
               case Obj(values) =>
@@ -181,13 +183,14 @@ package object optimize {
           rewriteSelector(sel, defs(jsFn.expr)).map(sel =>
             chain(src0,
               $match[F](sel),
-              $simpleMap[F](exprs, scope)).unFix)
+              $simpleMap[F](exprs, scope)).project)
         }
 
         case op => None
       }
     }
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def reorderOps[F[_]: Functor: Coalesce](wf: Fix[F])
       (implicit I: WorkflowOpCoreF :<: F)
       : Fix[F] = {
@@ -195,6 +198,7 @@ package object optimize {
       if (reordered == wf) wf else reorderOps(reordered)
     }
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def get0(leaves: List[BsonField.Name], rs: List[Reshape[ExprOp]]): Option[Reshape.Shape[ExprOp]] = {
       (leaves, rs) match {
         case (_, Nil) => $var(BsonField(leaves).map(DocVar.ROOT(_)).getOrElse(DocVar.ROOT())).right.some
@@ -287,8 +291,8 @@ package object optimize {
       : Option[(Fix[F], Grouped[ExprOp], Reshape.Shape[ExprOp])] = {
       def collectShapes: GAlgebra[(Fix[F], ?), F, (List[Reshape[ExprOp]], Fix[F])] =
         {
-          case $project(src, shape, _) => ((x: List[Reshape[ExprOp]]) => shape :: x).first(src._2)
-          case x                       => (Nil, Fix(x.map(_._1)))
+          case I($ProjectF(src, shape, _)) => ((x: List[Reshape[ExprOp]]) => shape :: x).first(src._2)
+          case x                           => (Nil, Fix(x.map(_._1)))
         }
 
       val (rs, src) = g.src.para(collectShapes)

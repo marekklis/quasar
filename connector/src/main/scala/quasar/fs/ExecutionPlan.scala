@@ -16,20 +16,26 @@
 
 package quasar.fs
 
-import quasar.Predef._
+import slamdata.Predef._
+import quasar.contrib.pathy.APath
 
-import argonaut._, Argonaut._
+import argonaut._, Argonaut._, ArgonautScalaz._
+import monocle.macros.Lenses
 import scalaz._, Scalaz._
 
-final case class ExecutionPlan(typ: FileSystemType, description: String)
+@Lenses
+final case class ExecutionPlan(typ: FileSystemType, physicalPlan: String, inputs: ISet[APath])
 
 object ExecutionPlan {
-  implicit val executionPlanOrder: Order[ExecutionPlan] =
-    Order.orderBy(p => (p.typ, p.description))
+  import APath._
 
-  implicit val executionPlanShow: Show[ExecutionPlan] =
-    Show.showFromToString
+  implicit val equal: Equal[ExecutionPlan] =
+    Equal.equalBy(p => (p.typ, p.physicalPlan, p.inputs))
 
-  implicit val executionPlanCodecJson: CodecJson[ExecutionPlan] =
-    casecodec2(ExecutionPlan.apply, ExecutionPlan.unapply)("type", "description")
+  implicit val show: Show[ExecutionPlan] =
+    Show.shows(p =>
+      s"ExecutionPlan[${p.typ}](inputs = ${p.inputs.shows})\n\n${p.physicalPlan}")
+
+  implicit val codecJson: CodecJson[ExecutionPlan] =
+    casecodec3(ExecutionPlan.apply, ExecutionPlan.unapply)("type", "physicalPlan", "inputs")
 }

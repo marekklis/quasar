@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.effect._
 import quasar.contrib.scalaz.eitherT._
 import quasar.physical.marklogic.DocType

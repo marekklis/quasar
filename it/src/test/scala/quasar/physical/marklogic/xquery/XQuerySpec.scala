@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{BackendName, Data, TestConfig}
 import quasar.physical.marklogic.ErrorMessages
 import quasar.physical.marklogic.fs._

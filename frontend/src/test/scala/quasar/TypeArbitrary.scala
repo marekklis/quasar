@@ -16,7 +16,7 @@
 
 package quasar
 
-import quasar.Predef.{Set => _, _}
+import slamdata.Predef.{Set => _, _}
 import quasar.DataArbitrary._
 import quasar.Type._
 

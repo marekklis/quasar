@@ -16,10 +16,11 @@
 
 package quasar.physical.mongodb.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._, DataArbitrary._
 import quasar.common._
 import quasar.contrib.pathy._
+import quasar.contrib.scalaz.foldable._
 import quasar.contrib.scalaz.writerT._
 import quasar.fp._
 import quasar.fp.ski._
@@ -38,7 +39,6 @@ import matryoshka.data.Fix
 import monocle.Prism
 import monocle.function.Field1
 import monocle.std.{disjunction => D}
-import monocle.std.tuple2._
 import org.specs2.execute.SkipException
 import org.specs2.specification.core._
 import pathy.Path._
@@ -48,16 +48,16 @@ import scalaz.stream._
 
 /** Unit tests for the MongoDB filesystem implementation. */
 class MongoDbFileSystemSpec
-  extends FileSystemTest[FileSystemIO](mongoFsUT map (_ filter (_.ref supports BackendCapability.write())))
+  extends FileSystemTest[BackendEffectIO](mongoFsUT map (_ filter (_.ref supports BackendCapability.write())))
   with quasar.ExclusiveQuasarSpecification {
 
   // TODO[scalaz]: Shadow the scalaz.Monad.monadMTMAB SI-2712 workaround
   import EitherT.eitherTMonad
 
-  val query  = QueryFile.Ops[FileSystemIO]
-  val write  = WriteFile.Ops[FileSystemIO]
-  val manage = ManageFile.Ops[FileSystemIO]
-  val fsQ    = new FilesystemQueries[FileSystemIO]
+  val query  = QueryFile.Ops[BackendEffectIO]
+  val write  = WriteFile.Ops[BackendEffectIO]
+  val manage = ManageFile.Ops[BackendEffectIO]
+  val fsQ    = new FilesystemQueries[BackendEffectIO]
 
   type X[A] = Process[manage.M, A]
 
@@ -108,7 +108,7 @@ class MongoDbFileSystemSpec
               vectorFirst[FileSystemError]
                 .composePrism(writeFailed)
                 .composeLens(Field1.first)
-                .isMatching(errs.toVector)
+                .nonEmpty(errs.toVector)
             }.run.unsafePerformSync.toEither must beRight(true)
           }
         }
@@ -218,7 +218,7 @@ class MongoDbFileSystemSpec
         def shouldFailWithPathNotFound(f: String => String) = {
           val dne = testPrefix map (_ </> file("__DNE__"))
           val q = dne map (p => f(posixCodec.printPath(p)))
-          val xform = QueryFile.Transforms[query.F]
+          val xform = QueryFile.Transforms[query.FreeS]
 
           import xform._
 
@@ -249,7 +249,7 @@ class MongoDbFileSystemSpec
                   .run.value.unsafePerformSync
               ) must beSome(file))
 
-            sql.fixParser.parse(sql.Query(f(posixCodec.printPath(file)))) fold (
+            sql.fixParser.parseExpr(sql.Query(f(posixCodec.printPath(file)))) fold (
               err => ko(s"Parsing failed: ${err.shows}"),
               check0)
           }
@@ -311,7 +311,7 @@ class MongoDbFileSystemSpec
           def check(src: ADir, dst: ADir)(implicit X: Apply[X]) = {
             val f1 = src </> file("movdb1")
             val f2 = src </> file("movdb2")
-            val ovr = ManageFile.MoveSemantics.Overwrite
+            val ovr = MoveSemantics.Overwrite
 
             (
               write.save(f1, oneDoc.toProcess).terminated |@|
@@ -343,7 +343,7 @@ class MongoDbFileSystemSpec
 
             runT(run)(for {
               tfile  <- manage.tempFile(pdir)
-              dbName <- EitherT.fromDisjunction[manage.F](
+              dbName <- EitherT.fromDisjunction[manage.FreeS](
                           Collection.dbNameFromPath(tfile).leftMap(pathErr(_)))
             } yield dbName).runEither must_== Collection.dbNameFromPath(pdir).toEither
           })
@@ -369,12 +369,12 @@ class MongoDbFileSystemSpec
 object MongoDbFileSystemSpec {
   // NB: No `chroot` here as we want to test deleting top-level
   //     dirs (i.e. databases).
-  val mongoFsUT: Task[IList[SupportedFs[FileSystemIO]]] =
+  val mongoFsUT: Task[IList[SupportedFs[BackendEffectIO]]] =
     (Functor[Task] compose Functor[IList])
       .map(
         TestConfig.externalFileSystems(
           FileSystemTest.fsTestConfig(FsType, definition)
-        ).handleWith[IList[SupportedFs[FileSystem]]] {
+        ).handleWith[IList[SupportedFs[BackendEffect]]] {
           case _: TestConfig.UnsupportedFileSystemConfig => Task.now(IList.empty)
         }
       )(_.liftIO)
@@ -383,12 +383,12 @@ object MongoDbFileSystemSpec {
 object MongoDbQScriptFileSystemSpec {
   // NB: No `chroot` here as we want to test deleting top-level
   //     dirs (i.e. databases).
-  val mongoFsUT: Task[IList[SupportedFs[FileSystemIO]]] =
+  val mongoFsUT: Task[IList[SupportedFs[BackendEffectIO]]] =
     (Functor[Task] compose Functor[IList])
       .map(
         TestConfig.externalFileSystems(
           FileSystemTest.fsTestConfig(QScriptFsType, qscriptDefinition)
-        ).handleWith[IList[SupportedFs[FileSystem]]] {
+        ).handleWith[IList[SupportedFs[BackendEffect]]] {
           case _: TestConfig.UnsupportedFileSystemConfig => Task.now(IList.empty)
         }
       )(_.liftIO)

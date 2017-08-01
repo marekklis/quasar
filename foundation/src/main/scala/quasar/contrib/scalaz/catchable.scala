@@ -16,7 +16,7 @@
 
 package quasar.contrib.scalaz
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import java.lang.{Throwable, RuntimeException}
 

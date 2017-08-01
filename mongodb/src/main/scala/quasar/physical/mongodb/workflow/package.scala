@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{NonTerminal, RenderTree, RenderedTree}, RenderTree.ops._
 import quasar.fp._
 import quasar.fp.ski._
@@ -69,7 +69,6 @@ package object workflow {
     def apply[F[_]](f: PipelineF[F, Unit])(implicit I: F :<: WorkflowF): PipelineOp =
       PipelineOp(I.inj(f.wf), f.bson)
   }
-  /** Provides an extractor for core ops wrapped up in `PipelineOp`. */
   object PipelineOpCore {
     def unapply(p: PipelineOp): Option[WorkflowOpCoreF[Unit]] =
       Inject[WorkflowOpCoreF, WorkflowF].prj(p.op)
@@ -100,15 +99,15 @@ package object workflow {
       Coalesce[F] = new Coalesce[F] {
     def coalesceƒ:
         F[Fix[F]] => Option[F[Fix[F]]] = {
-      case $match(src, selector) => src.project match {
-        case $sort(src0, value) =>
+      case I($MatchF(src, selector)) => src.project match {
+        case I($SortF(src0, value)) =>
           I.inj($SortF(I.inj($MatchF(src0, selector)).embed, value)).some
-        case $match(src0, sel0) =>
+        case I($MatchF(src0, sel0)) =>
           I.inj($MatchF(src0, sel0 ⊹ selector)).some
         case _ => None
       }
-      case WorkflowOpCoreF(p @ $ProjectF(src, shape, id)) => src.project match {
-        case $project(src0, shape0, id0) =>
+      case I(p @ $ProjectF(src, shape, id)) => src.project match {
+        case I($ProjectF(src0, shape0, id0)) =>
           inlineProject(p, List(shape0)).map(sh => I.inj($ProjectF(src0, sh, id0 |+| id)))
         // Would like to inline a $project into a preceding $simpleMap, but
         // This is not safe, because sometimes a $project is inserted after
@@ -124,67 +123,67 @@ package object workflow {
         //             ListMap("__tmp" -> js(base)),
         //             jsShape(jscore.Ident("__tmp")))),
         //         flatten, scope)))
-        case $group(src, grouped, by) if id != ExcludeId =>
+        case I($GroupF(src, grouped, by)) if id != ExcludeId =>
           inlineProjectGroup(shape, grouped).map(gr => I.inj($GroupF(src, gr, by)))
-        case $unwind(Embed($group(src, grouped, by)), unwound)
+        case I($UnwindF(Embed(I($GroupF(src, grouped, by))), unwound))
             if id != ExcludeId =>
           inlineProjectUnwindGroup(shape, unwound, grouped).map { case (unwound, grouped) =>
             I.inj($UnwindF(I.inj($GroupF(src, grouped, by)).embed, unwound))
           }
         case _ => None
       }
-      case $sort(Embed($sort(src, sort1)), sort2) =>
+      case I($SortF(Embed(I($SortF(src, sort1))), sort2)) =>
         I.inj($SortF(src, sort2 ⊹ sort1)).some
-      case $limit(src, count) => src.project match {
-        case $limit(src0, count0) =>
+      case I($LimitF(src, count)) => src.project match {
+        case I($LimitF(src0, count0)) =>
           I.inj($LimitF(src0, scala.math.min(count0, count))).some
-        case $skip(src0, count0) =>
+        case I($SkipF(src0, count0)) =>
           I.inj($SkipF(I.inj($LimitF(src0, count0 + count)).embed, count0)).some
         case _ => None
       }
-      case $skip(src, count) => src.project match {
-        case $skip(src0, count0) => I.inj($SkipF(src0, count0 + count)).some
-        case _                   => None
+      case I($SkipF(src, count)) => src.project match {
+        case I($SkipF(src0, count0)) => I.inj($SkipF(src0, count0 + count)).some
+        case _                       => None
       }
-      case $group(src, grouped, \/-($literal(bson))) if bson != Bson.Null =>
+      case I($GroupF(src, grouped, \/-($literal(bson)))) if bson != Bson.Null =>
         I.inj($GroupF(src, grouped, \/-($literal(Bson.Null)))).some
-      case WorkflowOpCoreF(op0 @ $GroupF(_, _, _)) =>
+      case I(op0 @ $GroupF(_, _, _)) =>
         inlineGroupProjects(op0).map { case (src, gr, by) => I.inj($GroupF(src, gr, by)) }
-      case $geoNear(src, _, _, _, _, _, _, _, _, _) => src.project match {
+      case I($GeoNearF(src, _, _, _, _, _, _, _, _, _)) => src.project match {
         // FIXME: merge the params
-        case $geoNear(_, _, _, _, _, _, _, _, _, _) => None
-        case _                                      => None
+        case I($GeoNearF(_, _, _, _, _, _, _, _, _, _)) => None
+        case _                                          => None
       }
-      case $map(src, fn, scope) => src.project match {
-        case $map(src0, fn0, scope0) =>
+      case I($MapF(src, fn, scope)) => src.project match {
+        case I($MapF(src0, fn0, scope0)) =>
           Reshape.mergeMaps(scope0, scope).map(sc =>
             I.inj($MapF(src0, $MapF.compose(fn, fn0), sc)))
-        case $flatMap(src0, fn0, scope0) =>
+        case I($FlatMapF(src0, fn0, scope0)) =>
           Reshape.mergeMaps(scope0, scope).map(sc =>
             I.inj($FlatMapF(src0, $FlatMapF.mapCompose(fn, fn0), sc)))
         case _                   => None
       }
-      case $flatMap(src, fn, scope) => src.project match {
-        case $map(src0, fn0, scope0)     =>
+      case I($FlatMapF(src, fn, scope)) => src.project match {
+        case I($MapF(src0, fn0, scope0))     =>
           Reshape.mergeMaps(scope0, scope).map(sc =>
             I.inj($FlatMapF(src0, $MapF.compose(fn, fn0), sc)))
-        case $flatMap(src0, fn0, scope0) =>
+        case I($FlatMapF(src0, fn0, scope0)) =>
           Reshape.mergeMaps(scope0, scope).map(sc =>
             I.inj($FlatMapF(src0, $FlatMapF.kleisliCompose(fn, fn0), sc)))
         case _                   => None
       }
-      case WorkflowOpCoreF(sm @ $SimpleMapF(src, _, _)) => src.project match {
-        case WorkflowOpCoreF(sm0 @ $SimpleMapF(_, _, _)) => I.inj(sm0 >>> sm).some
-        case _                                      => None
+      case I(sm @ $SimpleMapF(src, _, _)) => src.project match {
+        case I(sm0 @ $SimpleMapF(_, _, _)) => I.inj(sm0 >>> sm).some
+        case _                             => None
       }
-      case WorkflowOpCoreF($FoldLeftF(head, tail)) => head.project match {
-        case WorkflowOpCoreF($FoldLeftF(head0, tail0)) =>
+      case I($FoldLeftF(head, tail)) => head.project match {
+        case I($FoldLeftF(head0, tail0)) =>
           I.inj($FoldLeftF(head0, tail0 ⊹ tail)).some
         case _                       => None
       }
-      case $out(src, _) => src.project match {
-        case $read(_) => src.project.some
-        case _        => None
+      case I($OutF(src, _)) => src.project match {
+        case I($ReadF(_)) => src.project.some
+        case _            => None
       }
       case _ => None
     }
@@ -269,6 +268,7 @@ package object workflow {
     }
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def simpleShape[F[_]](op: Fix[F])(implicit I: F :<: Workflow3_2F): Option[List[BsonField.Name]] = {
     I.inj(op.unFix).run.fold[Option[List[BsonField.Name]]](
       {
@@ -282,6 +282,7 @@ package object workflow {
           (if (id == IncludeId) IdName :: value.keys.toList
           else value.keys.toList).some
         case sm @ $SimpleMapF(_, _, _)        =>
+          @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
           def loop(expr: JsCore): Option[List[jscore.Name]] =
             expr.simplify match {
               case jscore.Obj(value)      => value.keys.toList.some
@@ -325,6 +326,7 @@ package object workflow {
         : T =
       reparent(newSrc).wf.embed
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def fmap[G[_], B](f: A => B, g: F ~> G): SingleSourceF[G, B] =
       new SingleSourceF[G, B] {
         val src = f(self.src)
@@ -351,6 +353,7 @@ package object workflow {
     def bson: Bson.Doc = Bson.Doc(ListMap(op -> rhs))
 
     // NB: narrows the result type
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     override def fmap[G[_], B](f: A => B, g: F ~> G): PipelineF[G, B] =
       new PipelineF[G, B] {
         val src = f(self.src)
@@ -377,6 +380,7 @@ package object workflow {
     def reparent[B](newSrc: B): ShapePreservingF[F, B]
 
     // NB: narrows the result type
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     override def fmap[G[_], B](f: A => B, g: F ~> G): ShapePreservingF[G, B] =
       new ShapePreservingF[G, B] {
         val src = f(self.src)
@@ -415,11 +419,12 @@ package object workflow {
   implicit def workflowFCrush(implicit I: WorkflowOpCoreF :<: WorkflowF):
       Crush[WorkflowF] =
     new Crush[WorkflowF] {
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def crush[T[_[_]]: BirecursiveT](
         op: WorkflowF[(T[WorkflowF], (DocVar, WorkflowTask))]) = op match {
-        case $pure(value) => (DocVar.ROOT(), PureTask(value))
-        case $read(coll)  => (DocVar.ROOT(), ReadTask(coll))
-        case WorkflowOpCoreF(op @ $MatchF((src, rez), selector)) =>
+        case I($PureF(value)) => (DocVar.ROOT(), PureTask(value))
+        case I($ReadF(coll))  => (DocVar.ROOT(), ReadTask(coll))
+        case I(op @ $MatchF((src, rez), selector)) =>
           // TODO: If we ever allow explicit request of cursors (instead of
           //       collections), we could generate a FindQuery here.
           lazy val nonPipeline = {
@@ -446,7 +451,7 @@ package object workflow {
             case (base, up, pipe) => (base, PipelineTask(up, pipe))
           }
 
-        case WorkflowOpCoreF(op @ $MapF(
+        case I(op @ $MapF(
             (_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(m, r, sel, sort, limit, None, scope0, _, _), oa))),
             fn, scope))
             if m == $MapF.mapNOP && r == $ReduceF.reduceNOP =>
@@ -461,7 +466,7 @@ package object workflow {
         // A "simple" map op that doesn't do any flattening is "inlined" into
         // the finalizer of a previous map-reduce.
         // TODO: handle more than one MapExpr.
-        case WorkflowOpCoreF(op @ $SimpleMapF(
+        case I(op @ $SimpleMapF(
             (_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, _, _, _, _, None, scope0, _, _), oa))),
             NonEmptyList(MapExpr(expr), INil()),
             scope)) =>
@@ -473,9 +478,9 @@ package object workflow {
                   applyLens MapReduce._scope set s,
                 oa))
 
-        case WorkflowOpCoreF(op @ $SimpleMapF(_, _, _)) => crush(I.inj(op.raw))
+        case I(op @ $SimpleMapF(_, _, _)) => crush(I.inj(op.raw))
 
-        case WorkflowOpCoreF(op @ $ReduceF((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, reduceNOP, _, _, _, None, scope0, _, _), oa))), fn, scope)) =>
+        case I(op @ $ReduceF((_, (base, src1 @ MapReduceTask(src0, mr @ MapReduce(_, reduceNOP, _, _, _, None, scope0, _, _), oa))), fn, scope)) =>
           Reshape.mergeMaps(scope0, scope).fold(
             op.newMR(base, src1, None, None, None))(
             s => base -> MapReduceTask(
@@ -484,7 +489,7 @@ package object workflow {
                 applyLens MapReduce._scope set s,
               oa))
 
-        case WorkflowOpCoreF(op: MapReduceF[_]) =>
+        case I(op: MapReduceF[_]) =>
           op.singleSource.src match {
             case (_, (base, PipelineTask(src0, List(PipelineOpCore($MatchF(_, sel)))))) =>
               op.newMR(base, src0, Some(sel), None, None)
@@ -505,7 +510,7 @@ package object workflow {
               op.newMR(nb, task, None, None, None)
           }
 
-        case WorkflowOpCoreF($FoldLeftF(head, tail)) =>
+        case I($FoldLeftF(head, tail)) =>
           (ExprVar,
             FoldLeftTask(
               (finish(_, _)).tupled(head._2)._2,
@@ -524,11 +529,13 @@ package object workflow {
               })))
       }
 
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def pipeline[T[_[_]]: BirecursiveT](
         op: PipelineF[WorkflowF, T[WorkflowF]]):
           Option[(DocVar, WorkflowTask, List[PipelineOp])] =
         op.wf match {
-          case $match(src, selector) =>
+          case I($MatchF(src, selector)) =>
+            @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
             def pipelinable(sel: Selector): Boolean = sel match {
               case Selector.Where(_) => false
               case comp: Selector.CompoundSelector =>
@@ -593,15 +600,16 @@ package object workflow {
       // NB: We don’t convert a $ProjectF after a map/reduce op because it could
       //     affect the final shape unnecessarily.
       def crystallize(op: Fix[F]) = {
+        @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
         def unwindSrc(uw: $UnwindF[Fix[F]]): F[Fix[F]] =
           uw.src.project match {
-            case WorkflowOpCoreF(uw1 @ $UnwindF(_, _)) => unwindSrc(uw1)
+            case I(uw1 @ $UnwindF(_, _)) => unwindSrc(uw1)
             case src => src
           }
 
         val crystallizeƒ: F[Fix[F]] => F[Fix[F]] = {
-          case WorkflowOpCoreF(mr: MapReduceF[Fix[F]]) => mr.singleSource.src.project match {
-            case $project(src, shape, _)  =>
+          case I(mr: MapReduceF[Fix[F]]) => mr.singleSource.src.project match {
+            case I($ProjectF(src, shape, _))  =>
               shape.toJs.fold(
                 κ(I.inj(mr)),
                 x => {
@@ -612,18 +620,18 @@ package object workflow {
                         NonEmptyList(MapExpr(JsFn(base, x(jscore.Ident(base))))),
                         ListMap()))).project
                 })
-            case WorkflowOpCoreF(uw @ $UnwindF(_, _)) if IsPipeline.unapply(unwindSrc(uw)).isEmpty =>
+            case I(uw @ $UnwindF(_, _)) if IsPipeline.unapply(unwindSrc(uw)).isEmpty =>
               mr.singleSource.fmap(ι, I).reparentW(I.inj(uw.flatmapop).embed).project
             case _                        => I.inj(mr)
           }
-          case WorkflowOpCoreF($FoldLeftF(head, tail)) =>
+          case I($FoldLeftF(head, tail)) =>
             I.inj($FoldLeftF[Fix[F]](
               chain(head,
                 $project[F](
                   Reshape(ListMap(ExprName -> \/-($$ROOT))),
                   IncludeId)),
               tail.map(x => x.project match {
-                case $reduce(_, _, _) => x
+                case I($ReduceF(_, _, _)) => x
                 case _ => chain(x, $reduce[F]($ReduceF.reduceFoldLeft, ListMap()))
               })))
 
@@ -638,8 +646,9 @@ package object workflow {
             finished)(
             n => $project[F](Reshape(n.map(_ -> \/-($include())).toListMap), IgnoreId).apply(finished))
 
+        @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
         def promoteKnownShape(wf: Fix[F]): Fix[F] = wf.project match {
-          case $simpleMap(_, _, _)   => fixShape(wf)
+          case I($SimpleMapF(_, _, _))   => fixShape(wf)
           case IsShapePreserving(sp) => promoteKnownShape(sp.src)
           case _                     => finished
         }
@@ -659,17 +668,19 @@ package object workflow {
     new RenderTree[T[F]] {
       val wfType = "Workflow" :: Nil
 
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def chain(op: T[F]): List[RenderedTree] = op.project match {
         case IsSingleSource(ss) =>
           chain(ss.src) :+ Traverse[F].void(ss.wf).render
         case _ => List(render(op))
       }
 
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def render(v: T[F]) = v.project match {
         case IsSource(s)       => s.op.render
         case IsSingleSource(_) =>
           NonTerminal("Chain" :: wfType, None, chain(v))
-        case $foldLeft(_, _) =>
+        case ev0($FoldLeftF(_, _)) =>
           NonTerminal("$FoldLeftF" :: wfType, None, v.children.map(render(_)))
       }
     }

@@ -16,21 +16,26 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
+
+// Needed for shapeless
+import scala.Predef._
 
 import matryoshka._
 import scalaz._
 import shapeless._
+import shapeless.syntax.sized._
+import shapeless.ops.nat.ToInt
 
-sealed trait DimensionalEffect
+sealed abstract class DimensionalEffect
 /** Describes a function that reduces a set of values to a single value. */
 final case object Reduction extends DimensionalEffect
 /** Describes a function that expands a compound value into a set of values for
   * an operation.
   */
 final case object Expansion extends DimensionalEffect
-/** Describes a function that each individual value. */
+/** Describes a function that maps each individual value. */
 final case object Mapping extends DimensionalEffect
 /** Describes a function that compresses the identity information. */
 final case object Squashing extends DimensionalEffect
@@ -102,7 +107,7 @@ final case class TernaryFunc(
     applyGeneric(Func.Input3[A](a1, a2, a3))
 }
 
-sealed abstract class GenericFunc[N <: Nat] {
+sealed abstract class GenericFunc[N <: Nat](implicit toInt: ToInt[N]) { self =>
   def effect: DimensionalEffect
   def help: String
   def codomain: Func.Codomain
@@ -114,13 +119,21 @@ sealed abstract class GenericFunc[N <: Nat] {
   def applyGeneric[A](args: Func.Input[A, N]): LP[A] =
     Invoke[N, A](this, args)
 
-  final def untpe(tpe: Func.Codomain): Func.VDomain[N] =
-    untyper0((domain, codomain), tpe)
+  def applyUnsized[A](args: List[A]): Option[LP[A]] =
+    args.sized[N].map(applyGeneric)
 
   final def tpe(args: Func.Domain[N]): Func.VCodomain =
     typer0(args)
 
+  final def untpe(tpe: Func.Codomain): Func.VDomain[N] =
+    untyper0((domain, codomain), tpe)
+
   final def arity: Int = domain.length
+
+  def toFunction[A]: HomomorphicFunction[A, LP[A]] = new HomomorphicFunction[A, LP[A]] {
+    def arity = self.arity
+    def apply(args: List[A]) = self.applyUnsized(args)
+  }
 }
 
 trait GenericFuncInstances {
@@ -133,6 +146,8 @@ trait GenericFuncInstances {
       case agg.Min                        => "Min"
       case agg.Max                        => "Max"
       case agg.Avg                        => "Avg"
+      case agg.First                      => "First"
+      case agg.Last                       => "Last"
       case agg.Arbitrary                  => "Arbitrary"
       case array.ArrayLength              => "ArrayLength"
       case date.ExtractCentury            => "ExtractCentury"
@@ -167,12 +182,16 @@ trait GenericFuncInstances {
       case identity.Squash                => "Squash"
       case identity.ToId                  => "ToId"
       case math.Add                       => "Add"
+      case math.Abs                       => "Abs"
       case math.Multiply                  => "Multiply"
       case math.Power                     => "Power"
       case math.Subtract                  => "Subtract"
       case math.Divide                    => "Divide"
       case math.Negate                    => "Negate"
       case math.Modulo                    => "Modulo"
+      case math.Ceil                      => "Ceil"
+      case math.Floor                     => "Floor"
+      case math.Trunc                     => "Trunc"
       case relations.Eq                   => "Eq"
       case relations.Neq                  => "Neq"
       case relations.Lt                   => "Lt"

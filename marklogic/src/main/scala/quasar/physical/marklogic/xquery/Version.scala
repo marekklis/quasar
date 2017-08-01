@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.physical.marklogic.xquery.syntax._
 
 import scalaz.{Show, Order}

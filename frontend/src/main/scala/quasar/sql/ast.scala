@@ -16,16 +16,21 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._, RenderTree.ops._
 import quasar.fp._
+import quasar.fp.ski._
 
 import matryoshka._
+import matryoshka.implicits._
 import monocle.macros.Lenses
+import pathy.Path._
 import scalaz._, Scalaz._
+import scalaz.Liskov._
 
-sealed trait Sql[A]
+sealed abstract class Sql[A]
 object Sql {
+
   implicit val equal: Delay[Equal, Sql] =
     new Delay[Equal, Sql] {
       def apply[A](fa: Equal[A]) = {
@@ -96,7 +101,7 @@ object Sql {
           case ArrayLiteral(exprs) => NonTerminal("Array" :: astType, None, exprs.map(ra.render))
           case MapLiteral(exprs) => NonTerminal("Map" :: astType, None, exprs.map(_.render))
 
-          case InvokeFunction(name, args) => NonTerminal("InvokeFunction" :: astType, Some(name), args.map(ra.render))
+          case InvokeFunction(name, args) => NonTerminal("InvokeFunction" :: astType, Some(name.value), args.map(ra.render))
 
           case Match(expr, cases, Some(default)) => NonTerminal("Match" :: astType, None, ra.render(expr) :: (cases.map(renderCase) :+ ra.render(default)))
           case Match(expr, cases, None)          => NonTerminal("Match" :: astType, None, ra.render(expr) :: cases.map(renderCase))
@@ -115,7 +120,7 @@ object Sql {
           case Vari(name) => Terminal("Variable" :: astType, Some(":" + name))
 
           case Let(name, form, body) =>
-            NonTerminal("Let" :: astType, Some(name), ra.render(form) :: ra.render(body) :: Nil)
+            NonTerminal("Let" :: astType, Some(name.value), ra.render(form) :: ra.render(body) :: Nil)
 
           case IntLiteral(v) => Terminal("LiteralExpr" :: astType, Some(v.shows))
           case FloatLiteral(v) => Terminal("LiteralExpr" :: astType, Some(v.shows))
@@ -175,12 +180,36 @@ object Sql {
 @Lenses final case class Select[A] private[sql] (
   isDistinct:  IsDistinct,
   projections: List[Proj[A]],
-  relations:   Option[SqlRelation[A]],
+  relation:    Option[SqlRelation[A]],
   filter:      Option[A],
   groupBy:     Option[GroupBy[A]],
   orderBy:     Option[OrderBy[A]])
-    extends Sql[A]
-@Lenses final case class Vari[A] private[sql] (symbol: String) extends Sql[A]
+    extends Sql[A] {
+  def substituteRelationVariable[M[_]: Monad, T](mapping: Vari[A] => M[A])(implicit
+    T0: Recursive.Aux[T, Sql],
+    T1: Corecursive.Aux[T, Sql],
+    ev: A <~< T
+  ): M[SemanticError \/ Select[A]] = {
+      val newRelation = relation.traverse(_.transformM[EitherT[M, SemanticError, ?], A]({
+        case VariRelationAST(vari, alias) =>
+          EitherT(mapping(vari).map(ev(_).project match {
+            case Ident(name) =>
+              posixCodec.parsePath(Some(_), Some(_), κ(None), κ(None))(name).cata(
+                TableRelationAST(_, alias).right,
+                SemanticError.GenericError(s"bad path: $name (note: absolute file path required)").left) // FIXME
+            // If the variable points to another variable, substitute the old one for the new one
+            case Vari(symbol) => VariRelationAST(Vari(symbol), alias).right
+            case x =>
+              SemanticError.GenericError(s"not a valid table name: ${pprint(x.embed)}").left // FIXME
+          }))
+        case otherRelation => otherRelation.point[EitherT[M, SemanticError, ?]]
+      }, _.point[EitherT[M, SemanticError, ?]]))
+      newRelation.map(r => this.copy(relation = r)).run
+  }
+}
+@Lenses final case class Vari[A] private[sql] (symbol: String) extends Sql[A] {
+  def map[B](f: A => B): Vari[B] = Vari(symbol)
+}
 @Lenses final case class SetLiteral[A] private[sql] (exprs: List[A]) extends Sql[A]
 @Lenses final case class ArrayLiteral[A] private[sql] (exprs: List[A]) extends Sql[A]
 /** Can’t be a Map, because we need to arbitrarily transform the key */
@@ -195,13 +224,13 @@ object Sql {
     extends Sql[A]
 @Lenses final case class Unop[A] private[sql] (expr: A, op: UnaryOperator) extends Sql[A]
 @Lenses final case class Ident[A] private[sql] (name: String) extends Sql[A]
-@Lenses final case class InvokeFunction[A] private[sql] (name: String, args: List[A])
+@Lenses final case class InvokeFunction[A] private[sql] (name: CIName, args: List[A])
     extends Sql[A]
 @Lenses final case class Match[A] private[sql] (expr: A, cases: List[Case[A]], default: Option[A])
     extends Sql[A]
 @Lenses final case class Switch[A] private[sql] (cases: List[Case[A]], default: Option[A])
     extends Sql[A]
-@Lenses final case class Let[A](name: String, form: A, body: A) extends Sql[A]
+@Lenses final case class Let[A](ident: CIName, bindTo: A, in: A) extends Sql[A]
 @Lenses final case class IntLiteral[A] private[sql] (v: Long) extends Sql[A]
 @Lenses final case class FloatLiteral[A] private[sql] (v: Double) extends Sql[A]
 @Lenses final case class StringLiteral[A] private[sql] (v: String) extends Sql[A]

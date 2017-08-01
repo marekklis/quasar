@@ -16,6 +16,6 @@
 
 package quasar.sql
 
-import quasar.Predef.String
+import slamdata.Predef.String
 
 final case class Query(value: String)

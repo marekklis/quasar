@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef.String
+import slamdata.Predef.String
 
 import eu.timepit.refined.api.Refined
 import eu.timepit.refined.auto._
@@ -36,8 +36,8 @@ object Collation {
   val codepoint = Collation("http://marklogic.com/collation/codepoint")
 
   implicit val order: Order[Collation] =
-    Order.orderBy(_.value.get)
+    Order.orderBy(_.value.value)
 
   implicit val show: Show[Collation] =
-    Show.shows(_.value.get)
+    Show.shows(_.value.value)
 }

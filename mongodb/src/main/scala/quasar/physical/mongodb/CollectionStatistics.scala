@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 
 /** A subset of the information available from the collStats command. Many more
   * fields are available, some only in particular MongoDB versions or with

@@ -16,7 +16,7 @@
 
 package quasar.fp
 
-import quasar.Predef._
+import slamdata.Predef._
 import matryoshka._
 import scalaz._
 

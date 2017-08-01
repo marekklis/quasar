@@ -16,7 +16,7 @@
 
 package quasar.fp
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import eu.timepit.refined.numeric.{NonNegative, Positive => RPositive, Greater}
 import eu.timepit.refined.refineV

@@ -17,7 +17,7 @@
 package quasar.std
 
 import quasar.Func
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.TypeArbitrary
 
 import org.scalacheck.{Arbitrary, Gen, Prop}, Arbitrary.arbitrary

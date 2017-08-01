@@ -16,7 +16,7 @@
 
 package quasar.physical.sparkcore.fs.hdfs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, DataCodec}
 import quasar.contrib.pathy._
 import quasar.effect._

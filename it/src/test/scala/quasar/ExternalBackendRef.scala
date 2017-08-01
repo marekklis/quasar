@@ -16,7 +16,7 @@
 
 package quasar
 
-import quasar.Predef.Boolean
+import slamdata.Predef.Boolean
 import quasar.fs.FileSystemType
 
 import monocle.macros.Lenses

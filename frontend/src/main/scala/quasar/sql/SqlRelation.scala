@@ -16,8 +16,9 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._
+import quasar.common.JoinType
 import quasar.contrib.pathy._
 
 import matryoshka._
@@ -25,8 +26,9 @@ import monocle.macros.Lenses
 import pathy.Path._
 import scalaz._, Scalaz._
 
-sealed trait SqlRelation[A] extends Product with Serializable {
+sealed abstract class SqlRelation[A] extends Product with Serializable {
   def namedRelations: Map[String, List[NamedRelation[A]]] = {
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def collect(n: SqlRelation[A]): List[(String, NamedRelation[A])] =
       n match {
         case JoinRelation(left, right, _, _) => collect(left) ++ collect(right)
@@ -36,6 +38,7 @@ sealed trait SqlRelation[A] extends Product with Serializable {
     collect(this).groupBy(_._1).mapValues(_.map(_._2))
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def mapPathsM[F[_]: Monad](f: FUPath => F[FUPath]): F[SqlRelation[A]] = this match {
     case IdentRelationAST(_, _) => this.point[F]
     case VariRelationAST(_, _) => this.point[F]
@@ -45,6 +48,7 @@ sealed trait SqlRelation[A] extends Product with Serializable {
     case ExprRelationAST(_,_) => this.point[F]
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def transformM[F[_]: Monad, B](f: SqlRelation[A] => F[SqlRelation[B]], g: A => F[B]): F[SqlRelation[B]] = this match {
     case JoinRelation(left, right, tpe, clause) =>
       (left.transformM[F, B](f, g) |@|
@@ -55,12 +59,12 @@ sealed trait SqlRelation[A] extends Product with Serializable {
   }
 }
 
-sealed trait NamedRelation[A] extends SqlRelation[A] {
+sealed abstract class NamedRelation[A] extends SqlRelation[A] {
   def aliasName: String
 }
 
 /**
- * IdentRelationAST allows us to reference a let binding in relation (i.e. table)
+ * IdentRelationAST allows us to reference a let binding in a relation (i.e. table)
  * context. ExprF.IdentF allows us to reference a let binding in expression context.
  * Ideally we can unify these two contexts, providing a single way to reference a
  * let binding.
@@ -86,6 +90,7 @@ sealed trait NamedRelation[A] extends SqlRelation[A] {
     extends SqlRelation[A]
 
 object SqlRelation {
+  @SuppressWarnings(Array("org.wartremover.warts.Equals"))
   implicit val equal: Delay[Equal, SqlRelation] =
     new Delay[Equal, SqlRelation] {
       def apply[A](fa: Equal[A]) = {
@@ -114,6 +119,7 @@ object SqlRelation {
   implicit def renderTree: Delay[RenderTree, SqlRelation] =
     new Delay[RenderTree, SqlRelation] {
       def apply[A](ra: RenderTree[A]) = new RenderTree[SqlRelation[A]] {
+        @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
         def render(r: SqlRelation[A]): RenderedTree = r match {
           case IdentRelationAST(name, alias) =>
             val aliasString = alias.cata(" as " + _, "")
@@ -132,4 +138,14 @@ object SqlRelation {
         }
       }
     }
+
+  implicit val functor: Functor[SqlRelation] = new Functor[SqlRelation] {
+    def map[A, B](fa: SqlRelation[A])(f: A => B) = fa match {
+      case IdentRelationAST(name, alias)  => IdentRelationAST(name, alias)
+      case VariRelationAST(vari, alias)   => VariRelationAST(vari.map(f), alias)
+      case ExprRelationAST(select, alias) => ExprRelationAST(f(select), alias)
+      case TableRelationAST(name, alias)  => TableRelationAST(name, alias)
+      case JoinRelation(left, right, jt, clause) => JoinRelation(left.map(f), right.map(f), jt, f(clause))
+    }
+  }
 }

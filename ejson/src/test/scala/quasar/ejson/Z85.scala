@@ -17,7 +17,7 @@
 package quasar.ejson.z85
 
 import scala.Predef.$conforms
-import quasar.Predef._
+import slamdata.Predef._
 
 import org.scalacheck._
 import org.typelevel.discipline.specs2.mutable._

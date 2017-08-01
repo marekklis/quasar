@@ -16,17 +16,18 @@
 
 package quasar.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.Planner.UnsupportedPlan
 import quasar.common.PhaseResults
 import quasar.contrib.pathy._
 import quasar.frontend.logicalplan.{LogicalPlan, LogicalPlanR}
+import quasar.fp.free._
 
 import matryoshka._
 import matryoshka.data.Fix
 import matryoshka.implicits._
 import pathy.Path._
-import scalaz.{~>, \/, Applicative}
+import scalaz.{~>, \/, Applicative, Bind}
 import scalaz.syntax.equal._
 import scalaz.syntax.applicative._
 import scalaz.syntax.either._
@@ -85,8 +86,18 @@ object Empty {
       }
     }
 
+  def analyze[F[_] : Applicative]: Analyze ~> F = new (Analyze ~> F) {
+    def apply[A](from: Analyze[A]) = from match {
+      case Analyze.QueryCost(lp) => lpResult[F, FileSystemError \/ Int](lp).map(_._2).map(Bind[FileSystemError \/ ?].join(_))
+    }
+  }
+
+
   def fileSystem[F[_]: Applicative]: FileSystem ~> F =
     interpretFileSystem(queryFile, readFile, writeFile, manageFile)
+
+  def backendEffect[F[_]: Applicative]: BackendEffect ~> F =
+    analyze :+: fileSystem
 
   ////
 
@@ -94,7 +105,7 @@ object Empty {
 
   private def lpResult[F[_]: Applicative, A](plan: Fix[LogicalPlan]): F[(PhaseResults, FileSystemError \/ A)] =
     lp.paths(plan)
-      .headOption
+      .findMin
       // Documentation on `QueryFile` guarantees absolute paths, so calling `mkAbsolute`
       .cata(p => fsPathNotFound[F, A](mkAbsolute(rootDir, p)), unsupportedPlan[F, A](plan))
       .strengthL(Vector())

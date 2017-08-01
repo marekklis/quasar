@@ -16,14 +16,14 @@
 
 package quasar.physical.mongodb.workflow
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp._
 import quasar.physical.mongodb.expression.DocVar
 
 import scalaz._
 import simulacrum.typeclass
 
-@typeclass sealed trait Refs[F[_]] {
+@typeclass trait Refs[F[_]] {
   def refs[A](op: F[A]): List[DocVar]
 }
 

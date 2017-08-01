@@ -16,7 +16,7 @@
 
 package quasar.contrib.scalacheck
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import org.scalacheck.Gen
 

@@ -16,7 +16,7 @@
 
 package quasar.physical.couchbase.planner
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.physical.couchbase._
 import quasar.physical.couchbase.N1QL._
 import quasar.qscript, qscript.{ReduceFunc, ReduceFuncs => RF}
@@ -25,10 +25,11 @@ import matryoshka._
 import matryoshka.implicits._
 import scalaz._, Scalaz._
 
-final class ReduceFuncPlanner[T[_[_]]: CorecursiveT, F[_]: Monad] extends Planner[T, F, ReduceFunc] {
+final class ReduceFuncPlanner[T[_[_]]: CorecursiveT, F[_]: Applicative] extends Planner[T, F, ReduceFunc] {
 
-  def plan: AlgebraM[M, ReduceFunc, T[N1QL]] = planʹ >>> (_.embed.η[M])
+  def plan: AlgebraM[F, ReduceFunc, T[N1QL]] = planʹ >>> (_.embed.η[F])
 
+  @SuppressWarnings(Array("org.wartremover.warts.NonUnitStatements"))
   val planʹ: Transform[T[N1QL], ReduceFunc, N1QL] = {
     case RF.Arbitrary(a1)      => Min(a1)
     case RF.Avg(a1)            => Avg(a1)
@@ -39,7 +40,7 @@ final class ReduceFuncPlanner[T[_[_]]: CorecursiveT, F[_]: Monad] extends Planne
     case RF.Min(a1)            => Min(a1)
     case RF.Sum(a1)            => Sum(a1)
     case RF.UnshiftArray(a1)   => ArrAgg(a1)
-    case RF.UnshiftMap(a1, a2) => Obj(Map(a1 -> a2))
+    case RF.UnshiftMap(a1, a2) => Obj(List(a1 -> a2))
   }
 
 }

@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import monocle.Prism
 import scalaz._
@@ -67,7 +67,9 @@ sealed abstract class XQuery {
   }
 
   // Value Comparisons
+  @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
   def eq(other: XQuery): XQuery = XQuery(s"$this eq $other")
+  @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
   def ne(other: XQuery): XQuery = XQuery(s"$this ne $other")
   def lt(other: XQuery): XQuery = XQuery(s"$this lt $other")
   def le(other: XQuery): XQuery = XQuery(s"$this le $other")

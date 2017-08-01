@@ -16,7 +16,7 @@
 
 package quasar.server
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import scala.concurrent.duration._
 import scala.collection.Seq
@@ -38,21 +38,18 @@ class ControlServiceSpec extends quasar.Qspec {
                                       (causeRestart: Uri => Task[Unit])(afterRestart: Task[B]): B = {
     val uri = Uri(authority = Some(Authority(port = Some(initialPort))))
 
-    val servers = Http4sUtils.startServers(initialPort, reload => control.service(defaultPort, reload) orElse info.service)
-
     (for {
-      result <- servers
-      (servers, shutdown) = result
+      server <- PortChangingServer.start(initialPort, reload => control.service(defaultPort, reload) orElse info.service)
       b <- (for {
-        unconsResult <- servers.unconsOption
+        unconsResult <- server.servers.unconsOption
         (_, others) = unconsResult.get
         _ <- causeRestart(uri)
         unconsResult2 <- others.unconsOption
         (_, others2) = unconsResult2.get
         b <- afterRestart
-        _ <- shutdown
+        _ <- server.shutdown
         _ <- others2.run
-      } yield b).timed(timeoutMillis)(DefaultTimeoutScheduler).onFinish(_ => shutdown)
+      } yield b).timed(timeoutMillis)(DefaultTimeoutScheduler).onFinish(_ => server.shutdown)
     } yield b).unsafePerformSyncFor(timeoutMillis)
   }
 

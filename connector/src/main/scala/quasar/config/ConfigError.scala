@@ -16,11 +16,11 @@
 
 package quasar.config
 
-import quasar.Predef._
+import slamdata.Predef._
 import monocle.Prism
 import scalaz.Show
 
-sealed trait ConfigError
+sealed abstract class ConfigError
 
 object ConfigError {
   final case class MalformedConfig private[config] (src: String, reason: String)

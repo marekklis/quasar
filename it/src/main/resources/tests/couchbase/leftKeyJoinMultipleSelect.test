@@ -1,0 +1,44 @@
+{
+    "name": "left key join with multiple fields selected (Couchbase)",
+    "backends": {
+        "couchbase":         "ignoreFieldOrder",
+        "marklogic_json":    "skip",
+        "marklogic_xml":     "skip",
+        "mimir":"skip",
+        "mongodb_2_6":       "skip",
+        "mongodb_3_0":       "skip",
+        "mongodb_read_only": "skip",
+        "mongodb_3_2":       "skip",
+        "mongodb_3_4":       "skip",
+        "mongodb_q_3_2":     "skip",
+        "spark_hdfs":        "skip",
+        "spark_local":       "skip"
+    },
+    "data": [],
+    "query": "SELECT META(brewery).id AS brewery_meta_id,
+                     brewery.name AS brewery_name,
+                     beer.name AS beer_name,
+                     beer.brewery_id AS beer_brewery_id,
+                     beer.category AS beer_category
+              FROM `brewery` AS brewery JOIN `beer` AS beer
+              ON META(brewery).id = beer.brewery_id
+              WHERE beer.category = \"North American Ale\"",
+    "predicate": "atLeast",
+    "ignoreResultOrder": true,
+    "expected": [
+        {
+            "brewery_meta_id": "21st_amendment_brewery_cafe",
+            "brewery_name": "21st Amendment Brewery Cafe",
+            "beer_brewery_id": "21st_amendment_brewery_cafe",
+            "beer_name": "21A IPA",
+            "beer_category": "North American Ale"
+        },
+        {
+            "brewery_meta_id": "21st_amendment_brewery_cafe",
+            "brewery_name": "21st Amendment Brewery Cafe",
+            "beer_brewery_id": "21st_amendment_brewery_cafe",
+            "beer_name": "563 Stout",
+            "beer_category": "North American Ale"
+        }
+    ]
+}

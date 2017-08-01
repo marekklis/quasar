@@ -16,8 +16,9 @@
 
 package quasar.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{NonTerminal, RenderTree, RenderTreeT}, RenderTree.ops._
+import quasar.contrib.matryoshka._
 import quasar.fp._
 
 import matryoshka._
@@ -28,7 +29,7 @@ import scalaz._, Scalaz._
 /** Projections are technically dimensional (i.e., QScript) operations. However,
   * to a filesystem, they are merely Map operations. So, we use these components
   * while building the QScript plan and they are then used in static path
-  * processing, but they are replaced with equivalent MapFuncs before being
+  * processing, but they are replaced with equivalent MapFuncsCore before being
   * processed by the filesystem.
   */
 sealed abstract class ProjectBucket[T[_[_]], A] {

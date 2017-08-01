@@ -16,7 +16,7 @@
 
 package quasar.physical
 
-import quasar.Predef.String
+import slamdata.Predef.String
 import quasar.contrib.scalaz.MonadError_
 
 import scalaz.{NonEmptyList, MonadError}

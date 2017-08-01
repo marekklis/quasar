@@ -16,7 +16,7 @@
 
 package quasar.std
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import java.time._
 import scalaz._

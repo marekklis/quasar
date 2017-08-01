@@ -16,7 +16,7 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.sql.SemanticAnalysis._, Provenance._
 
 import pathy.Path._

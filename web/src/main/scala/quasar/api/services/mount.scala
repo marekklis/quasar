@@ -16,8 +16,8 @@
 
 package quasar.api.services
 
-import quasar.Predef.{ -> => _, _ }
-import quasar.api._
+import slamdata.Predef.{ -> => _, _ }
+import quasar.api._, ToApiError._
 import quasar.contrib.pathy._
 import quasar.fp._
 import quasar.fs.mount._
@@ -46,20 +46,22 @@ object mount {
           NotFound withReason "Mount point not found.",
           s"There is no mount point at ${printPath(path)}",
           "path" := path)
-        respondT(M.lookupConfig(path).toRight(err))
+        respondT(EitherT(
+          M.lookupConfig(path).run.run ∘ (_ \/> (err) >>= (_
+            leftMap(ToApiError[MountingError].toApiError)))))
 
       case req @ MOVE -> AsPath(src) =>
         respondT(requiredHeader(Destination, req).map(_.value).fold(
-          _.raiseError[ApiErrT[M.F, ?], String],
+          _.raiseError[ApiErrT[M.FreeS, ?], String],
           dst => refineType(src).fold(
             srcDir  => move[S, Dir](srcDir,  dst, UriPathCodec.parseAbsDir,  "directory"),
             srcFile => move[S, File](srcFile, dst, UriPathCodec.parseAbsFile, "file"))))
 
       case req @ POST -> AsDirPath(parent) =>
         respondT(for {
-          hdr <- EitherT.fromDisjunction[M.F](requiredHeader(XFileName, req))
+          hdr <- EitherT.fromDisjunction[M.FreeS](requiredHeader(XFileName, req))
           fn  =  hdr.value
-          dst <- EitherT.fromDisjunction[M.F](
+          dst <- EitherT.fromDisjunction[M.FreeS](
                   (UriPathCodec.parseRelDir(fn) orElse UriPathCodec.parseRelFile(fn))
                     .flatMap(sandbox(currentDir, _))
                     .map(parent </> _)
@@ -90,7 +92,7 @@ object mount {
     S0: MountingFailure :<: S,
     S1: PathMismatchFailure :<: S
   ): EitherT[Free[S, ?], ApiError, String] =
-    parse(dstStr).map(sandboxAbs).cata(dst =>
+    parse(dstStr).map(unsafeSandboxAbs).cata(dst =>
       M.remount[T](src, dst)
         .as(s"moved ${printPath(src)} to ${printPath(dst)}")
         .liftM[ApiErrT],
@@ -112,7 +114,7 @@ object mount {
     for {
       body  <- free.lift(EntityDecoder.decodeString(req))
                  .into[S].liftM[ApiErrT]
-      bConf <- EitherT.fromDisjunction[Free[S, ?]](Parse.decodeWith(
+      bConf <- EitherT.fromDisjunction[Free[S, ?]](Parse.decodeWith[ApiError \/ MountConfig, MountConfig](
                  body,
                  (_: MountConfig).right[ApiError],
                  parseErrorMsg => ApiError.fromMsg_(
@@ -120,7 +122,7 @@ object mount {
                    parseErrorMsg).left,
                  (msg, _) => ApiError.fromMsg_(
                    BadRequest, msg).left))
-      exists <- M.lookupType(path).isDefined.liftM[ApiErrT]
+      exists <- M.lookupType(path).run.isDefined.liftM[ApiErrT]
       mnt    =  if (replaceIfExists && exists) M.replace(path, bConf)
                 else M.mount(path, bConf)
       _      <- mnt.liftM[ApiErrT]

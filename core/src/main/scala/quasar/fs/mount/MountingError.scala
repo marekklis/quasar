@@ -16,7 +16,7 @@
 
 package quasar.fs.mount
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.connector.EnvironmentError
 import quasar.fs._
 
@@ -24,7 +24,7 @@ import monocle.Prism
 import scalaz.NonEmptyList
 import scalaz._, Scalaz._
 
-sealed trait MountingError
+sealed abstract class MountingError
 
 object MountingError {
   final case class PError private (err: PathError)
@@ -36,25 +36,30 @@ object MountingError {
   final case class InvalidConfig private (config: MountConfig, reasons: NonEmptyList[String])
     extends MountingError
 
+  final case class InvalidMount private (`type`: MountType, error: String)
+      extends MountingError
+
   val pathError: Prism[MountingError, PathError] =
-    Prism[MountingError, PathError] {
-      case PError(err) => Some(err)
-      case _ => None
+    Prism.partial[MountingError, PathError] {
+      case PError(err) => err
     } (PError)
 
   val environmentError: Prism[MountingError, EnvironmentError] =
-    Prism[MountingError, EnvironmentError] {
-      case EError(err) => Some(err)
-      case _ => None
+    Prism.partial[MountingError, EnvironmentError] {
+      case EError(err) => err
     } (EError)
 
   val invalidConfig: Prism[MountingError, (MountConfig, NonEmptyList[String])] =
-    Prism[MountingError, (MountConfig, NonEmptyList[String])] {
-      case InvalidConfig(cfg, reasons) => Some((cfg, reasons))
-      case _ => None
+    Prism.partial[MountingError, (MountConfig, NonEmptyList[String])] {
+      case InvalidConfig(cfg, reasons) => (cfg, reasons)
     } (InvalidConfig.tupled)
 
-  implicit def mountingErrorShow: Show[MountingError] =
+  val invalidMount: Prism[MountingError, (MountType, String)] =
+    Prism.partial[MountingError, (MountType, String)] {
+      case InvalidMount(t, e) => (t, e)
+    } (InvalidMount.tupled)
+
+  implicit val mountingErrorShow: Show[MountingError] =
     Show.shows {
       case PError(e) =>
         e.shows
@@ -62,5 +67,16 @@ object MountingError {
         e.shows
       case InvalidConfig(cfg, rsns) =>
         s"Invalid mount config, '${cfg.shows}', because: ${rsns.list.toList.mkString("; ")}"
+      case InvalidMount(t, e) =>
+        s"Invalid ${t.shows}, because: $e"
     }
+
+  implicit val equal: Equal[MountingError] = Equal.equal {
+    case (PError(a), PError(b))                     => a ≟ b
+    case (EError(a), EError(b))                     => a ≟ b
+    case (InvalidConfig(a, b), InvalidConfig(c, d)) => a ≟ c && b ≟ d
+    case (InvalidMount(a, b), InvalidMount(c, d))   => a ≟ c && b ≟ d
+    case _                                          => false
+  }
+
 }

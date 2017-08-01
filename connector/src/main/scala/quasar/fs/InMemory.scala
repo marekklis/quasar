@@ -16,7 +16,7 @@
 
 package quasar.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.Data
 import quasar.Planner.UnsupportedPlan
 import quasar.common.{PhaseResult, PhaseResults}
@@ -89,11 +89,11 @@ object InMemory {
             fileL(f).st flatMap {
               case Some(xs) =>
                 val rIdx =
-                  st.get.toInt + pos
+                  st.value.toInt + pos
 
                 val rCount =
                   rChunkSize                          min
-                  lim.cata(_.get.toInt - pos, rChunkSize) min
+                  lim.cata(_.value.toInt - pos, rChunkSize) min
                   (xs.length - rIdx)
 
                 if (rCount <= 0)
@@ -121,7 +121,6 @@ object InMemory {
         for {
           h <- nextSeq ∘ (WriteHandle(f, _))
           _ <- wFileL(h) := Some(f)
-          _ <- fileL(f) %= (_ orElse Some(Vector()))
         } yield h.right
 
       case WriteFile.Write(h, xs) =>
@@ -201,10 +200,13 @@ object InMemory {
 
     private def phaseResults(lp: Fix[LogicalPlan]): InMemoryFs[PhaseResults] =
       queryResponsesL.st map (qrs =>
-        Vector(PhaseResult.detail("Lookup in Memory", executionPlan(lp, qrs).description)))
+        Vector(PhaseResult.detail("Lookup in Memory", executionPlan(lp, qrs).physicalPlan)))
 
     private def executionPlan(lp: Fix[LogicalPlan], queries: QueryResponses): ExecutionPlan =
-      ExecutionPlan(FileSystemType("in-memory"), s"Lookup $lp in $queries")
+      ExecutionPlan(
+        FileSystemType("in-memory"),
+        s"Lookup $lp in $queries",
+        lpr.absolutePaths(lp))
 
     private val optimizer = new Optimizer[Fix[LogicalPlan]]
 
@@ -260,6 +262,8 @@ object InMemory {
     runStatefully(initial).map(_ compose fileSystem)
 
   ////
+
+  private val lpr = new LogicalPlanR[Fix[LogicalPlan]]
 
   private def tmpName(n: Long) = s"__quasar.gen_$n"
 

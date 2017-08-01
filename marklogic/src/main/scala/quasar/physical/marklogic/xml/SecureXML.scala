@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xml
 
-import quasar.Predef.String
+import slamdata.Predef.String
 
 import javax.xml.parsers.SAXParserFactory
 import org.xml.sax.SAXException

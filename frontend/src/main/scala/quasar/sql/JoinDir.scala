@@ -16,7 +16,7 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.Data
 import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 import quasar.std.StdLib._

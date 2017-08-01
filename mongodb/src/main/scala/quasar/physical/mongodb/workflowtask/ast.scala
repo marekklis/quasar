@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb.workflowtask
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{RenderTree, Terminal, NonTerminal}
 import quasar.javascript._
 import quasar.physical.mongodb.{Bson, Collection, MapReduce, Selector}
@@ -27,7 +27,7 @@ import matryoshka.Delay
 import scalaz._, Scalaz._
 
 /** A WorkflowTask approximately represents one request to MongoDB. */
-sealed trait WorkflowTaskF[A]
+sealed abstract class WorkflowTaskF[A]
 object WorkflowTaskF {
   /** A task that returns a necessarily small amount of raw data. */
   final case class PureTaskF[A](value: Bson) extends WorkflowTaskF[A]

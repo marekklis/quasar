@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.RenderTree
 import quasar.TreeMatchers
 import quasar.common.SortDir
@@ -26,12 +26,13 @@ import quasar.physical.mongodb.accumulator._
 import quasar.physical.mongodb.expression._
 import quasar.physical.mongodb.workflow._
 
-import matryoshka.data.Fix
+import matryoshka._
+import matryoshka.implicits._
 import org.scalacheck._
+import org.scalacheck.rng.Seed
+import org.specs2.matcher.MustMatchers._
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties._
-import shapeless.contrib.scalaz.instances._
-import org.specs2.matcher.MustMatchers._
 
 class WorkflowFSpec extends org.specs2.scalaz.Spec {
   implicit val arbIdHandling: Arbitrary[IdHandling] =
@@ -48,6 +49,16 @@ class WorkflowFSpec extends org.specs2.scalaz.Spec {
     }
 
   implicit val arbIntCardinalExpr = arbCardinalExpr(Arbitrary.arbInt)
+
+  implicit val cogenCardinalExpr: Cogen ~> λ[α => Cogen[CardinalExpr[α]]] =
+    new (Cogen ~> λ[α => Cogen[CardinalExpr[α]]]) {
+      def apply[α](cg: Cogen[α]): Cogen[CardinalExpr[α]] =
+        Cogen { (seed: Seed, ce: CardinalExpr[α]) =>
+          cg.perturb(seed, ce.copoint)
+        }
+    }
+
+  implicit val cogenIntCardinalExpr = cogenCardinalExpr(Cogen.cogenInt)
 
   checkAll("CardinalExpr", traverse.laws[CardinalExpr])
   checkAll("CardinalExpr", comonad.laws[CardinalExpr])
@@ -228,6 +239,8 @@ class WorkflowSpec extends quasar.Qspec with TreeMatchers {
           IgnoreId))
     }
 
+    val WC = Inject[WorkflowOpCoreF, WorkflowF]
+
     "not inline $projects with nesting" in {
       // NB: simulates a pair of type-checks, which cannot be inlined in a simple way
       // because the second digs into the structure created by the first.
@@ -245,8 +258,8 @@ class WorkflowSpec extends quasar.Qspec with TreeMatchers {
               $cond($literal(Bson.Bool(true)), $field("__tmp0", "foo"), $literal(Bson.Int32(1)))))),
           IgnoreId))
 
-      (op.unFix match {
-        case $project(Fix($project(_, Reshape(s1), _)), Reshape(s2), _) =>
+      (op.project match {
+        case WC($ProjectF(Embed(WC($ProjectF(_, Reshape(s1), _))), Reshape(s2), _)) =>
           s1.keys must_== Set(BsonField.Name("__tmp0"))
           s2.keys must_== Set(BsonField.Name("__tmp1"))
         case _ => failure
@@ -268,8 +281,8 @@ class WorkflowSpec extends quasar.Qspec with TreeMatchers {
             BsonField.Name("__tmp1") -> \/-($field("foo")))),
           IgnoreId))
 
-      (op.unFix match {
-        case $project(Fix($project(_, Reshape(s1), _)), Reshape(s2), _) =>
+      (op.project match {
+        case WC($ProjectF(Embed(WC($ProjectF(_, Reshape(s1), _))), Reshape(s2), _)) =>
           s1.keys must_== Set(BsonField.Name("__tmp0"))
           s2.keys must_== Set(BsonField.Name("__tmp1"))
         case _ => failure

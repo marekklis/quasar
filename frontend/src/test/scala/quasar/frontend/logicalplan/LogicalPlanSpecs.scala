@@ -16,7 +16,7 @@
 
 package quasar.frontend.logicalplan
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, Func}
 import quasar.DataArbitrary._
 import quasar.fp._
@@ -28,7 +28,6 @@ import org.scalacheck._
 import org.specs2.scalaz.{ScalazMatchers, Spec}
 import scalaz._, Scalaz._
 import scalaz.scalacheck.ScalazProperties.{equal => _, _}
-import shapeless.contrib.scalaz.instances._
 import pathy.Path._
 
 class LogicalPlanSpecs extends Spec with ScalazMatchers {

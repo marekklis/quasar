@@ -16,7 +16,7 @@
 
 package quasar.std
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Func, Type, SemanticError}
 import quasar.contrib.shapeless._
 import quasar.fp.ski._

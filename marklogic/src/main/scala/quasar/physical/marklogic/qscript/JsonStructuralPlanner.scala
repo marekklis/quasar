@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.physical.marklogic.DocType
 import quasar.physical.marklogic.xquery._
 import quasar.physical.marklogic.xquery.expr._
@@ -93,7 +93,7 @@ private[qscript] final class JsonStructuralPlanner[F[_]: Monad: PrologW: QNameGe
         (obj `/` key).point[F]
 
       case XQuery.StringLit(s) =>
-        if (XQuery.flwor.isMatching(obj))
+        if (XQuery.flwor.nonEmpty(obj))
           freshName[F] map (m => let_(m := obj) return_ (~m `/` child.nodeNamed(s)))
         else
           (obj `/` child.nodeNamed(s)).point[F]

@@ -16,7 +16,7 @@
 
 package quasar.jscore
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.javascript.Js
 
 import matryoshka.Delay
@@ -65,7 +65,7 @@ object Name {
   implicit val equal: Equal[Name] = Equal.equalA
 }
 
-sealed trait JsCoreF[A]
+sealed abstract class JsCoreF[A]
 object JsCoreF {
   final case class LiteralF[A](value: Js.Lit) extends JsCoreF[A]
   final case class IdentF[A](name: Name) extends JsCoreF[A]

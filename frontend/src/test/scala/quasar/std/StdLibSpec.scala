@@ -16,19 +16,20 @@
 
 package quasar.std
 
-import quasar.Predef._
+import slamdata.Predef._, BigDecimal.RoundingMode
 import quasar.{Data, DataCodec, Qspec, Type}
 import quasar.DateArbitrary._
 import quasar.frontend.logicalplan._
 
-import java.time._
-import java.time.ZoneOffset.UTC
+import java.time._, ZoneOffset.UTC
+import scala.collection.Traversable
 import scala.math.abs
 
 import matryoshka.data.Fix
 import matryoshka.implicits._
 import org.specs2.execute.{Failure, Result}
 import org.specs2.matcher.{Expectable, Matcher}
+import org.specs2.specification.core.Fragment
 import org.scalacheck.{Arbitrary, Gen}
 import scalaz._, Scalaz._
 
@@ -55,7 +56,7 @@ abstract class StdLibSpec extends Qspec {
     }
   }
 
-  def tests(runner: StdLibTestRunner) = {
+  def tests(runner: StdLibTestRunner): Fragment = {
     import runner._
 
     implicit val arbBigInt = Arbitrary[BigInt] { runner.intDomain }
@@ -88,7 +89,30 @@ abstract class StdLibSpec extends Qspec {
       // NB: `Like` is simplified to `Search`
 
       "Search" >> {
-        todo
+        "find contents within string when case sensitive" >> {
+          ternary(Search(_, _, _).embed, Data.Str("church"), Data.Str(".*ch.*"), Data.Bool(false), Data.Bool(true)) and
+            ternary(Search(_, _, _).embed, Data.Str("China"), Data.Str("^Ch.*$"), Data.Bool(false), Data.Bool(true)) and
+            ternary(Search(_, _, _).embed, Data.Str("matching"), Data.Str(".*ch.*"), Data.Bool(false), Data.Bool(true))
+        }
+
+        "reject a non-matching string when case sensitive" >> {
+          ternary(Search(_, _, _).embed, Data.Str("church"), Data.Str("^bs.*$"), Data.Bool(false), Data.Bool(false)) and
+            ternary(Search(_, _, _).embed, Data.Str("china"), Data.Str("^bs.*$"), Data.Bool(false), Data.Bool(false)) and
+            ternary(Search(_, _, _).embed, Data.Str("matching"), Data.Str(".*bs.*"), Data.Bool(false), Data.Bool(false)) and
+            ternary(Search(_, _, _).embed, Data.Str("matching"), Data.Str(".*CH.*"), Data.Bool(false), Data.Bool(false))
+        }
+
+        "find contents within string when case insensitive" >> {
+          ternary(Search(_, _, _).embed, Data.Str("Church"), Data.Str(".*ch.*"), Data.Bool(true), Data.Bool(true)) and
+            ternary(Search(_, _, _).embed, Data.Str("cHina"), Data.Str("^ch.*$"), Data.Bool(true), Data.Bool(true)) and
+            ternary(Search(_, _, _).embed, Data.Str("matCHing"), Data.Str(".*ch.*"), Data.Bool(true), Data.Bool(true))
+        }
+
+        "reject a non-matching string when case insensitive" >> {
+          ternary(Search(_, _, _).embed, Data.Str("Church"), Data.Str("^bs.*$"), Data.Bool(true), Data.Bool(false)) and
+            ternary(Search(_, _, _).embed, Data.Str("cHina"), Data.Str("^bs.*$"), Data.Bool(true), Data.Bool(false)) and
+            ternary(Search(_, _, _).embed, Data.Str("matCHing"), Data.Str(".*bs.*"), Data.Bool(true), Data.Bool(false))
+        }
       }
 
       "Length" >> {
@@ -605,35 +629,189 @@ abstract class StdLibSpec extends Qspec {
       }
 
       "TemporalTrunc" >> {
-        "timestamp" >> prop { (x: Instant, y: TemporalPart) =>
-          val t = x.atZone(UTC)
-
-          truncZonedDateTime(y, t).fold(
+        def truncZonedDateTimeTimestamp(p: TemporalPart, i: Instant): Result =
+          truncZonedDateTime(p, i.atZone(UTC)).fold(
             e => Failure(e.shows),
             tt => unary(
-              TemporalTrunc(y, _).embed,
-              Data.Timestamp(x),
+              TemporalTrunc(p, _).embed,
+              Data.Timestamp(i),
               Data.Timestamp(tt.toInstant)))
+
+        "Q#1966" >>
+          truncZonedDateTimeTimestamp(
+            TemporalPart.Century,
+            Instant.parse("2000-03-01T06:15:45.204Z"))
+
+        "timestamp Century" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Century, x)
         }
 
-        "date" >> prop { (x: LocalDate, y: TemporalPart) =>
-          val t = x.atStartOfDay(UTC)
+        "timestamp Day" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Day, x)
+        }
 
-          truncZonedDateTime(y, t).fold(
+        "timestamp Decade" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Decade, x)
+        }
+
+        "timestamp Hour" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Hour, x)
+        }
+
+        "timestamp Microsecond" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Microsecond, x)
+        }
+
+        "timestamp Millennium" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Millennium, x)
+        }
+
+        "timestamp Millisecond" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Millisecond, x)
+        }
+
+        "timestamp Minute" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Minute, x)
+        }
+
+        "timestamp Month" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Month, x)
+        }
+
+        "timestamp Quarter" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Quarter, x)
+        }
+
+        "timestamp Second" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Second, x)
+        }
+
+        "timestamp Week" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Week, x)
+        }
+
+        "timestamp Year" >> prop { x: Instant =>
+          truncZonedDateTimeTimestamp(TemporalPart.Year, x)
+        }
+
+        def truncZonedDateTimeDate(p: TemporalPart, d: LocalDate): Result =
+          truncZonedDateTime(p, d.atStartOfDay(UTC)).fold(
             e => Failure(e.shows),
             tt => unary(
-              TemporalTrunc(y, _).embed,
-              Data.Date(x),
+              TemporalTrunc(p, _).embed,
+              Data.Date(d),
               Data.Date(tt.toLocalDate)))
+
+        "date Century" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Century, d)
         }
 
-        "time" >> prop { (x: LocalTime, y: TemporalPart) =>
-          truncLocalTime(y, x).fold(
+        "date Day" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Day, d)
+        }
+
+        "date Decade" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Decade, d)
+        }
+
+        "date Hour" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Hour, d)
+        }
+
+        "date Microsecond" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Microsecond, d)
+        }
+
+        "date Millennium" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Millennium, d)
+        }
+
+        "date Millisecond" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Millisecond, d)
+        }
+
+        "date Minute" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Minute, d)
+        }
+
+        "date Month" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Month, d)
+        }
+
+        "date Quarter" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Quarter, d)
+        }
+
+        "date Second" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Second, d)
+        }
+
+        "date Week" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Week, d)
+        }
+
+        "date Year" >> prop { d: LocalDate =>
+          truncZonedDateTimeDate(TemporalPart.Year, d)
+        }
+
+        def truncLocalTimeʹ(p: TemporalPart, t: LocalTime): Result =
+          truncLocalTime(p, t).fold(
             e => Failure(e.shows),
             tt => unary(
-              TemporalTrunc(y, _).embed,
-              Data.Time(x),
+              TemporalTrunc(p, _).embed,
+              Data.Time(t),
               Data.Time(tt)))
+
+        "time Century" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Century, t)
+        }
+
+        "time Day" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Day, t)
+        }
+
+        "time Decade" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Decade, t)
+        }
+
+        "time Hour" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Hour, t)
+        }
+
+        "time Microsecond" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Microsecond, t)
+        }
+
+        "time Millennium" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Millennium, t)
+        }
+
+        "time Millisecond" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Millisecond, t)
+        }
+
+        "time Minute" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Minute, t)
+        }
+
+        "time Month" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Month, t)
+        }
+
+        "time Quarter" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Quarter, t)
+        }
+
+        "time Second" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Second, t)
+        }
+
+        "time Week" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Week, t)
+        }
+
+        "time Year" >> prop { t: LocalTime =>
+          truncLocalTimeʹ(TemporalPart.Year, t)
         }
       }
 
@@ -776,26 +954,77 @@ abstract class StdLibSpec extends Qspec {
         // TODO: Interval
       }
 
-      "Modulo" >> {
-        "any int by 1" >> prop { (x: Int) =>
-            binary(Modulo(_, _).embed, Data.Int(x), Data.Int(1), Data.Int(0))
+      "Abs" >> {
+        "any Int" >> prop { (x: BigInt) =>
+          unary(Abs(_).embed, Data.Int(x), Data.Int(x.abs))
         }
 
-        "any positive ints" >> prop { (x0: Int, y0: Int) =>
-          val x = abs(x0)
-          val y = abs(y0)
-          (x > 0 && y > 1) ==>
+        "any Dec" >> prop { (x: BigDecimal) =>
+          unary(Abs(_).embed, Data.Dec(x), Data.Dec(x.abs))
+        }
+
+        // TODO: add support for interval
+        // "any Interval" >> prop { (x: Duration) =>
+        //   unary(Abs(_).embed, Data.Interval(x), if (x.isNegative) Data.Interval(x.negated) else Data.Interval(x))
+        // }
+      }
+
+      "Trunc" >> {
+        "any Int" >> prop { (x: BigInt) =>
+          unary(Trunc(_).embed, Data.Int(x), Data.Int(x))
+        }
+
+        "any Dec" >> prop { (x: BigDecimal) =>
+          unary(Trunc(_).embed, Data.Dec(x), Data.Dec(x.setScale(0, RoundingMode.DOWN)))
+        }
+      }
+
+      "Ceil" >> {
+        "any Int" >> prop { (x: BigInt) =>
+          unary(Ceil(_).embed, Data.Int(x), Data.Int(x))
+        }
+
+        "any Dec" >> prop { (x: BigDecimal) =>
+          unary(Ceil(_).embed, Data.Dec(x), Data.Dec(x.setScale(0, RoundingMode.CEILING)))
+        }
+      }
+
+      "Floor" >> {
+        "any Int" >> prop { (x: BigInt) =>
+          unary(Floor(_).embed, Data.Int(x), Data.Int(x))
+        }
+
+        "any Dec" >> prop { (x: BigDecimal) =>
+          unary(Floor(_).embed, Data.Dec(x), Data.Dec(x.setScale(0, RoundingMode.FLOOR)))
+        }
+      }
+
+      "Modulo" >> {
+        "any int by 1" >> prop { (x: Int) =>
+          binary(Modulo(_, _).embed, Data.Int(x), Data.Int(1), Data.Int(0))
+        }
+
+        "any ints" >> prop { (x: Int, y: Int) =>
+          y != 0 ==>
             binary(Modulo(_, _).embed, Data.Int(x), Data.Int(y), Data.Int(BigInt(x) % BigInt(y)))
         }
 
-        // TODO: figure out what domain can be tested here
+        // TODO analyze and optionally shortCircuit per connector
         // "any doubles" >> prop { (x: Double, y: Double) =>
-        //   binary(Modulo(_, _).embed, Data.Dec(x), Data.Dec(y), Data.Dec(x % y))
+        //   y != 0 ==>
+        //     binary(Modulo(_, _).embed, Data.Dec(x), Data.Dec(y), Data.Dec(BigDecimal(x).remainder(BigDecimal(y))))
         // }
-
-        // TODO: figure out what domain can be tested here
+        //
+        // "any big decimals" >> prop { (x: BigDecimal, y: BigDecimal) =>
+        //   !y.equals(0.0) ==>
+        //     binary(Modulo(_, _).embed, Data.Dec(x), Data.Dec(y), Data.Dec(x.remainder(y)))
+        // }
+        //
         // "mixed int/double" >> prop { (x: Int, y: Double) =>
-        //   commute(Modulo(_, _).embed, Data.Int(x), Data.Dec(y), Data.Dec(x % y))
+        //   y != 0 ==>
+        //     binary(Modulo(_, _).embed, Data.Int(x), Data.Dec(y), Data.Dec(BigDecimal(y).remainder(BigDecimal(x))))
+        //   x != 0 ==>
+        //     binary(Modulo(_, _).embed, Data.Dec(y), Data.Int(x), Data.Dec(BigDecimal(y).remainder(BigDecimal(x))))
         // }
       }
     }
@@ -840,6 +1069,9 @@ abstract class StdLibSpec extends Qspec {
             binary(Eq(_, _).embed, x, y, Data.Bool(false))
         }
 
+        "any date & timestamp" >> prop { (d: LocalDate, i: Instant) =>
+          binary(Eq(_, _).embed, Data.Date(d), Data.Timestamp(i), Data.NA)
+        }
         // TODO: the rest of the types
       }
 
@@ -908,6 +1140,9 @@ abstract class StdLibSpec extends Qspec {
           binary(Lt(_, _).embed, Data.Str(x), Data.Str(y), Data.Bool(x < y))
         }
 
+        "any date & timestamp" >> prop { (d: LocalDate, i: Instant) =>
+          binary(Lt(_, _).embed, Data.Date(d), Data.Timestamp(i), Data.NA)
+        }
         // TODO: Timestamp, Interval, cross-type comparison
       }
 
@@ -936,7 +1171,9 @@ abstract class StdLibSpec extends Qspec {
           binary(Lte(_, _).embed, Data.Str(x), Data.Str(y), Data.Bool(x <= y))
         }
 
-        // TODO: Timestamp, Interval, cross-type comparison
+        "any date & timestamp" >> prop { (d: LocalDate, i: Instant) =>
+          binary(Lte(_, _).embed, Data.Date(d), Data.Timestamp(i), Data.NA)
+        }
       }
 
       "Gt" >> {
@@ -963,8 +1200,9 @@ abstract class StdLibSpec extends Qspec {
         "any two Strs" >> prop { (x: String, y: String) =>
           binary(Gt(_, _).embed, Data.Str(x), Data.Str(y), Data.Bool(x > y))
         }
-
-        // TODO: Timestamp, Interval, cross-type comparison
+        "any date & timestamp" >> prop { (d: LocalDate, i: Instant) =>
+          binary(Gt(_, _).embed, Data.Date(d), Data.Timestamp(i), Data.NA)
+        }
       }
 
       "Gte" >> {
@@ -992,7 +1230,9 @@ abstract class StdLibSpec extends Qspec {
           binary(Gte(_, _).embed, Data.Str(x), Data.Str(y), Data.Bool(x >= y))
         }
 
-        // TODO: Timestamp, Interval, cross-type comparison
+        "any date & timestamp" >> prop { (d: LocalDate, i: Instant) =>
+          binary(Gte(_, _).embed, Data.Date(d), Data.Timestamp(i), Data.NA)
+        }
       }
 
       "Between" >> {
@@ -1109,7 +1349,7 @@ abstract class StdLibSpec extends Qspec {
 
       "Meta" >> {
         // FIXME: Implement once we've switched to EJson in LogicalPlan.
-        "returns metadata associated with a value" >> skipped("Requires EJson.")
+        "returns metadata associated with a value" >> pending("Requires EJson.")
       }
     }
   }

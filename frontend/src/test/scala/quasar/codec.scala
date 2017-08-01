@@ -18,7 +18,7 @@ package quasar
 
 import argonaut._, Argonaut._
 import quasar.DataEncodingError.{UnrepresentableDataError, UnescapedKeyError}
-import quasar.Predef._
+import slamdata.Predef._
 
 import java.time._
 import scalaz._, Scalaz._

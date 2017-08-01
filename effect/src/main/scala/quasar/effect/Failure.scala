@@ -16,7 +16,7 @@
 
 package quasar.effect
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.contrib.scalaz._
 
 import scalaz.{Failure => _, _}
@@ -28,7 +28,7 @@ import scalaz.syntax.std.option._
   *
   * @tparam E the reason/error describing why the computation failed
   */
-sealed trait Failure[E, A]
+sealed abstract class Failure[E, A]
 
 object Failure {
   final case class Fail[E, A](e: E) extends Failure[E, A]
@@ -36,47 +36,47 @@ object Failure {
   final class Ops[E, S[_]](implicit S: Failure[E, ?] :<: S)
     extends LiftedOps[Failure[E, ?], S] {
 
-    def attempt[A](fa: F[A]): F[E \/ A] =
+    def attempt[A](fa: FreeS[A]): FreeS[E \/ A] =
       fa.foldMap(attempt0).run
 
-    def fail[A](e: E): F[A] =
+    def fail[A](e: E): FreeS[A] =
       lift(Fail(e))
 
-    def onFinish[A](fa: F[A], f: Option[E] => F[Unit]): F[A] =
+    def onFinish[A](fa: FreeS[A], f: Option[E] => FreeS[Unit]): FreeS[A] =
       attempt(fa).flatMap(_.fold(
         e => f(Some(e)) *> fail(e),
         a => f(None)    as a))
 
-    def onFail[A](fa: F[A], f: E => F[Unit]): F[A] =
-      onFinish(fa, _.cata(f,().pure[F]))
+    def onFail[A](fa: FreeS[A], f: E => FreeS[Unit]): FreeS[A] =
+      onFinish(fa, _.cata(f,().pure[FreeS]))
 
-    def recover[A](fa: F[A], f: E => F[A]): F[A] =
-      attempt(fa).flatMap(_.fold(f, _.point[F]))
+    def recover[A](fa: FreeS[A], f: E => FreeS[A]): FreeS[A] =
+      attempt(fa).flatMap(_.fold(f, _.point[FreeS]))
 
-    def unattempt_[A](fa: E \/ A): F[A] =
-      unattempt(fa.point[F])
+    def unattempt_[A](fa: E \/ A): FreeS[A] =
+      unattempt(fa.point[FreeS])
 
-    def unattempt[A](fa: F[E \/ A]): F[A] =
-      fa.flatMap(_.fold(fail, _.point[F]))
+    def unattempt[A](fa: FreeS[E \/ A]): FreeS[A] =
+      fa.flatMap(_.fold(fail, _.point[FreeS]))
 
-    val unattemptT: EitherT[F, E, ?] ~> F = new (EitherT[F, E, ?] ~> F) {
-      def apply[A](v: EitherT[F, E, A]): F[A] = unattempt(v.run)
+    val unattemptT: EitherT[FreeS, E, ?] ~> FreeS = new (EitherT[FreeS, E, ?] ~> FreeS) {
+      def apply[A](v: EitherT[FreeS, E, A]): FreeS[A] = unattempt(v.run)
     }
 
-    implicit val monadError: MonadError[F, E] =
-      new MonadError[F, E] {
+    implicit val monadError: MonadError[FreeS, E] =
+      new MonadError[FreeS, E] {
         def raiseError[A](e: E) = fail(e)
-        def handleError[A](fa: F[A])(f: E => F[A]) = recover(fa, f)
+        def handleError[A](fa: FreeS[A])(f: E => FreeS[A]) = recover(fa, f)
         def point[A](a: => A) = Free.pure(a)
-        def bind[A, B](fa: F[A])(f: A => F[B]) = fa flatMap f
+        def bind[A, B](fa: FreeS[A])(f: A => FreeS[B]) = fa flatMap f
       }
 
     ////
 
     private type Err[A]      = Failure[E, A]
-    private type G[A]        = EitherT[F, E, A]
+    private type G[A]        = EitherT[FreeS, E, A]
     private type GT[X[_], A] = EitherT[X, E, A]
-    private type GE[A, B]    = EitherT[F, A, B]
+    private type GE[A, B]    = EitherT[FreeS, A, B]
 
     private val attemptE: Err ~> G = new (Err ~> G) {
       val err = MonadError[G, E]
@@ -100,25 +100,13 @@ object Failure {
   }
 
   def mapError[D, E](f: D => E): Failure[D, ?] ~> Failure[E, ?] =
-    new (Failure[D, ?] ~> Failure[E, ?]) {
-      def apply[A](fa: Failure[D, A]) = fa match {
-        case Fail(d) => Fail(f(d))
-      }
-    }
+    λ[Failure[D, ?] ~> Failure[E, ?]]{ case Fail(d) => Fail(f(d))}
 
   def toError[F[_], E](implicit F: MonadError[F, E]): Failure[E, ?] ~> F =
-    new (Failure[E, ?] ~> F) {
-      def apply[A](fa: Failure[E, A]) = fa match {
-        case Fail(e) => F.raiseError(e)
-      }
-    }
+    λ[Failure[E, ?] ~> F]{ case Fail(e) => F.raiseError(e)}
 
   def toCatchable[F[_], E <: Throwable](implicit C: Catchable[F]): Failure[E, ?] ~> F =
-    new (Failure[E, ?] ~> F) {
-      def apply[A](fa: Failure[E, A]) = fa match {
-        case Fail(e) => C.fail(e)
-      }
-    }
+    λ[Failure[E, ?] ~> F]{ case Fail(e) => C.fail(e)}
 
   def toRuntimeError[F[_]: Catchable, E: Show]: Failure[E, ?] ~> F =
     toCatchable[F, RuntimeException]

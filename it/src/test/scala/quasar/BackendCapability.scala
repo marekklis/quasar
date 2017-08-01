@@ -16,7 +16,7 @@
 
 package quasar
 
-import quasar.Predef.Unit
+import slamdata.Predef.Unit
 import quasar.fp.ski.κ
 
 import monocle.Prism

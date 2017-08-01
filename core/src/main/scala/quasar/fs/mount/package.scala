@@ -16,7 +16,7 @@
 
 package quasar.fs
 
-import quasar.Predef.{Map, Vector}
+import slamdata.Predef.{Map, Vector}
 import quasar.contrib.pathy._
 import quasar.effect._
 import quasar.fp._, free._
@@ -49,15 +49,6 @@ package object mount {
       KeyValueStore.Ops[APath, MountConfig, S]
   }
 
-  type MountingFileSystem[A] = Coproduct[Mounting, FileSystem, A]
-
-  object MountingFileSystem {
-    def interpret[F[_]](
-      mounting: Mounting ~> F,
-      fileSystem: FileSystem ~> F
-    ): MountingFileSystem ~> F =
-      mounting :+: fileSystem
-  }
 
   //-- Views --
 

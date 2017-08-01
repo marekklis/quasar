@@ -16,7 +16,7 @@
 
 package quasar.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import org.scalacheck.{Arbitrary, Gen}
 import scalaz.Show

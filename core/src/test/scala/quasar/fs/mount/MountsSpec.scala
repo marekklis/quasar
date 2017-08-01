@@ -16,7 +16,7 @@
 
 package quasar.fs.mount
 
-import quasar.Predef.List
+import slamdata.Predef.List
 
 import pathy.Path._
 import pathy.scalacheck.PathyArbitrary._

@@ -16,8 +16,10 @@
 
 package quasar.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{NonTerminal, RenderTree, RenderTreeT}, RenderTree.ops._
+import quasar.common.JoinType
+import quasar.contrib.matryoshka._
 import quasar.fp._
 
 import matryoshka._
@@ -44,6 +46,7 @@ object EquiJoin {
   implicit def equal[T[_[_]]: EqualT]:
       Delay[Equal, EquiJoin[T, ?]] =
     new Delay[Equal, EquiJoin[T, ?]] {
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def apply[A](eq: Equal[A]) =
         Equal.equal {
           case (EquiJoin(a1, l1, r1, lk1, rk1, f1, c1),
@@ -60,6 +63,7 @@ object EquiJoin {
 
   implicit def show[T[_[_]]: ShowT]: Delay[Show, EquiJoin[T, ?]] =
     new Delay[Show, EquiJoin[T, ?]] {
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def apply[A](showA: Show[A]): Show[EquiJoin[T, A]] = Show.show {
         case EquiJoin(src, lBr, rBr, lkey, rkey, f, combine) =>
           Cord("EquiJoin(") ++
@@ -76,6 +80,7 @@ object EquiJoin {
   implicit def renderTree[T[_[_]]: RenderTreeT: ShowT]: Delay[RenderTree, EquiJoin[T, ?]] =
     new Delay[RenderTree, EquiJoin[T, ?]] {
       val nt = List("EquiJoin")
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def apply[A](r: RenderTree[A]): RenderTree[EquiJoin[T, A]] = RenderTree.make {
           case EquiJoin(src, lBr, rBr, lKey, rKey, tpe, combine) =>
             NonTerminal(nt, None, List(

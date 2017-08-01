@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._
 import quasar.contrib.scalaz.catchable._
 import quasar.fp._

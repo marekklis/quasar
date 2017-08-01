@@ -16,14 +16,14 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp._
 import quasar.fs._
 
 import matryoshka._
 import scalaz._, Scalaz._
 
-sealed trait ParsingError { def message: String}
+sealed abstract class ParsingError { def message: String}
 final case class GenericParsingError(message: String) extends ParsingError
 final case class ParsingPathError(error: PathError) extends ParsingError {
   def message = error.shows

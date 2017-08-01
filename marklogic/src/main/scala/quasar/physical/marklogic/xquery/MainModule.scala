@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import monocle.macros.Lenses
 import scalaz.Functor
@@ -29,7 +29,7 @@ import scalaz.syntax.std.option._
 @Lenses
 final case class MainModule(version: Version, prologs: Prologs, queryBody: XQuery) {
   def render: String = {
-    val (funcs, decls) = prologs.partition(Prolog.funcDecl.isMatching)
+    val (funcs, decls) = prologs.partition(Prolog.funcDecl.nonEmpty)
 
     val declBlock = decls.toIList.map(d => s"${d.render}${Prolog.Separator}").toNel map { ls =>
       "\n\n" + ls.intercalate("\n")

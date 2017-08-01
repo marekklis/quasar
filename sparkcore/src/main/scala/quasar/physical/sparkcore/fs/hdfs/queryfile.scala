@@ -16,14 +16,15 @@
 
 package quasar.physical.sparkcore.fs.hdfs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, DataCodec}
 import quasar.physical.sparkcore.fs.queryfile.Input
 import quasar.contrib.pathy._
 import quasar.fs.FileSystemError
-import quasar.fs.FileSystemErrT
 import quasar.fs.FileSystemError._
+import quasar.fs.FileSystemErrT
 import quasar.fs.PathError._
+import quasar.fp.free._
 import quasar.contrib.pathy._
 
 import java.io.BufferedWriter
@@ -56,7 +57,9 @@ class queryfile(fileSystem: Task[FileSystem]) {
     rdd <- readfile.fetchRdd(sc, pathStr)
   } yield rdd
 
-  def store(rdd: RDD[Data], out: AFile): Task[Unit] = for {
+  def store[S[_]](rdd: RDD[Data], out: AFile)(implicit
+    S: Task :<: S
+  ): Free[S, Unit] = lift(for {
     path <- toPath(out)
     hdfs <- fileSystem
   } yield {
@@ -71,18 +74,22 @@ class queryfile(fileSystem: Task[FileSystem]) {
     })
     bw.close()
     hdfs.close()
-  }
+  }).into[S]
 
-  def fileExists(f: AFile): Task[Boolean] = for {
+  def fileExists[S[_]](f: AFile)(implicit
+    S: Task :<: S
+  ): Free[S, Boolean] = lift(for {
     path <- toPath(f)
     hdfs <- fileSystem
   } yield {
     val exists = hdfs.exists(path)
     hdfs.close()
     exists
-  }
+  }).into[S]
 
-  def listContents(d: ADir): FileSystemErrT[Task, Set[PathSegment]] = EitherT(for {
+  def listContents[S[_]](d: ADir)(implicit
+    S: Task :<: S
+  ): FileSystemErrT[Free[S, ?], Set[PathSegment]] = EitherT(lift(for {
     path <- toPath(d)
     hdfs <- fileSystem
   } yield {
@@ -94,14 +101,14 @@ class queryfile(fileSystem: Task[FileSystem]) {
     } else pathErr(pathNotFound(d)).left[Set[PathSegment]]
     hdfs.close
     result
-  })
+  }).into[S])
 
   def readChunkSize: Int = 5000
 
-  def input: Input =
-    Input(fromFile _, store _, fileExists _, listContents _, readChunkSize _)
+  def input[S[_]](implicit s0: Task :<: S): Input[S] =
+    Input[S](fromFile _, store[S] _, fileExists[S] _, listContents[S] _, readChunkSize _)
 }
 
 object queryfile {
-  def input(fileSystem: Task[FileSystem]): Input = new queryfile(fileSystem).input
+  def input[S[_]](fileSystem: Task[FileSystem])(implicit s0: Task :<: S): Input[S] = new queryfile(fileSystem).input
 }

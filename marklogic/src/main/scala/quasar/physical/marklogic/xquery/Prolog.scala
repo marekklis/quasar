@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import monocle.{Getter, Prism}
 import scalaz.{Show, Order}

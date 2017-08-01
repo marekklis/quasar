@@ -16,7 +16,7 @@
 
 package quasar.fs.mount
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp.ski._
 import quasar.contrib.pathy.APath
 
@@ -31,6 +31,8 @@ import scalaz.std.list._
 final case class MountingsConfig(toMap: Map[APath, MountConfig]) extends AnyVal
 
 object MountingsConfig {
+  import APath._
+
   val empty: MountingsConfig =
     MountingsConfig(Map())
 
@@ -44,7 +46,6 @@ object MountingsConfig {
   implicit val mountingsConfigDecodeJson: DecodeJson[MountingsConfig] =
     DecodeJson.of[Map[String, MountConfig]]
       .flatMap(m0 => DecodeJson(κ(m0.toList.foldLeftM(Map[APath, MountConfig]()) {
-        case (m, (s, mc)) =>
-          jString(s).as[APath](APath.aPathDecodeJson).map(p => m + (p -> mc))
+        case (m, (s, mc)) => jString(s).as[APath].map(p => m + (p -> mc))
       }))).map(MountingsConfig(_))
 }

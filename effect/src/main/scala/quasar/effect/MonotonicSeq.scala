@@ -16,7 +16,7 @@
 
 package quasar.effect
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp.TaskRef
 
 import monocle.Lens
@@ -36,7 +36,7 @@ import scalaz.syntax.applicative._
   *
   * must always be true.
   */
-sealed trait MonotonicSeq[A]
+sealed abstract class MonotonicSeq[A]
 
 object MonotonicSeq {
   case object Next extends MonotonicSeq[Long]
@@ -44,7 +44,7 @@ object MonotonicSeq {
   final class Ops[S[_]](implicit S: MonotonicSeq :<: S)
     extends LiftedOps[MonotonicSeq, S] {
 
-    def next: F[Long] =
+    def next: FreeS[Long] =
       lift(Next)
   }
 
@@ -77,13 +77,8 @@ object MonotonicSeq {
       new Aux[F]
 
     final class Aux[F[_]] {
-      def apply[S](l: Lens[S, Long])(implicit F: MonadState[F, S])
-                  : MonotonicSeq ~> F =
-        new (MonotonicSeq ~> F) {
-          def apply[A](seq: MonotonicSeq[A]) = seq match {
-            case Next => F.gets(l.get) <* F.modify(l.modify(_ + 1))
-          }
-        }
+      def apply[S](l: Lens[S, Long])(implicit F: MonadState[F, S]): MonotonicSeq ~> F =
+        λ[MonotonicSeq ~> F]{ case Next => F.gets(l.get) <* F.modify(l.modify(_ + 1)) }
     }
   }
 }

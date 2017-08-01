@@ -16,7 +16,7 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import java.lang.System
 import scalaz.concurrent.Task

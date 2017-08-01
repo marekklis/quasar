@@ -16,7 +16,7 @@
 
 package quasar.api.services
 
-import quasar.Predef.{ -> => _, _ }
+import slamdata.Predef.{ -> => _, _ }
 import quasar.Data
 import quasar.api._, ToQResponse.ops._, ToApiError.ops._
 import quasar.contrib.pathy._
@@ -40,7 +40,7 @@ import scalaz.stream.Process
 import scodec.bits.ByteVector
 
 object data {
-  import ManageFile.{MoveSemantics, MoveScenario}
+  import ManageFile.MoveScenario
 
   def service[S[_]](
     implicit
@@ -55,7 +55,8 @@ object data {
     case req @ GET -> AsPath(path) :? Offset(offsetParam) +& Limit(limitParam) =>
       respond_((offsetOrInvalid(offsetParam) |@| limitOrInvalid(limitParam)) { (offset, limit) =>
         val requestedFormat = MessageFormat.fromAccept(req.headers.get(Accept))
-        download[S](requestedFormat, path, offset, limit)
+        val zipped = req.headers.get(Accept).exists(_.values.exists(_.mediaRange == MediaType.`application/zip`))
+        download[S](requestedFormat, path, offset, limit, zipped)
       })
 
     case req @ POST -> AsFilePath(path) =>
@@ -66,10 +67,10 @@ object data {
 
     case req @ Method.MOVE -> AsPath(path) =>
       respond((for {
-        dstStr <- EitherT.fromDisjunction[M.F](
+        dstStr <- EitherT.fromDisjunction[M.FreeS](
                     requiredHeader(Destination, req) map (_.value))
-        dst    <- EitherT.fromDisjunction[M.F](parseDestination(dstStr))
-        scn    <- EitherT.fromDisjunction[M.F](moveScenario(path, dst))
+        dst    <- EitherT.fromDisjunction[M.FreeS](parseDestination(dstStr))
+        scn    <- EitherT.fromDisjunction[M.FreeS](moveScenario(path, dst))
         _      <- M.move(scn, MoveSemantics.FailIfExists)
                     .leftMap(_.toApiError)
       } yield Created).run)
@@ -84,7 +85,8 @@ object data {
     format: MessageFormat,
     path: APath,
     offset: Natural,
-    limit: Option[Positive]
+    limit: Option[Positive],
+    zipped: Boolean
   )(implicit
     R: ReadFile.Ops[S],
     Q: QueryFile.Ops[S],
@@ -99,7 +101,14 @@ object data {
             (format.disposition.toList: List[Header])
         QResponse.headers.modify(_ ++ headers)(QResponse.streaming(p))
       },
-      filePath => formattedDataResponse(format, R.scan(filePath, offset, limit)))
+      filePath => {
+        if (zipped) {
+          formattedZipDataResponse(format, filePath, R.scan(filePath, offset, limit))
+        }
+        else {
+          formattedDataResponse(format, R.scan(filePath, offset, limit))
+        }
+      })
 
   private def parseDestination(dstString: String): ApiError \/ APath = {
     def absPathRequired(rf: pathy.Path[Rel, _, _]) = ApiError.fromMsg(
@@ -108,9 +117,9 @@ object data {
       "dstPath" := posixCodec.unsafePrintPath(rf)).left
     UriPathCodec.parsePath(
       absPathRequired,
-      sandboxAbs(_).right,
+      unsafeSandboxAbs(_).right,
       absPathRequired,
-      sandboxAbs(_).right
+      unsafeSandboxAbs(_).right
     )(dstString)
   }
 

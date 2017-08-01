@@ -16,7 +16,7 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.common.SortDir
 import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
 import quasar.sql.CompilerHelpers

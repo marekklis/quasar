@@ -16,7 +16,7 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import java.util.concurrent.atomic.AtomicLong
 import scalaz._, Scalaz._
@@ -44,7 +44,7 @@ object TaskResource {
     val counter = new AtomicLong(0)
     def nextId: Task[Long] = Task.delay(counter.getAndIncrement)
 
-    sealed trait RsrcState
+    sealed abstract class RsrcState
     case object Start extends RsrcState
     case class Acquiring(id: Long) extends RsrcState
     case class Acquired(a: A) extends RsrcState

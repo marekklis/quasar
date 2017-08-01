@@ -16,7 +16,7 @@
 
 package quasar.std
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Func, SemanticError, Type, TypeArbitrary}, Type.Const
 import quasar.frontend.logicalplan._
 

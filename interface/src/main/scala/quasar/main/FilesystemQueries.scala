@@ -16,7 +16,7 @@
 
 package quasar.main
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, queryPlan, Variables}
 import quasar.fp.ski.κ
 import quasar.contrib.pathy._
@@ -27,25 +27,13 @@ import quasar.sql.Sql
 import eu.timepit.refined.auto._
 import matryoshka.data.Fix
 import scalaz.{Failure => _, Lens => _, _}, Scalaz._
-import scalaz.iteratee._
-import scalaz.stream.Process
+import scalaz.stream.{Process0, Process}
 
 class FilesystemQueries[S[_]](implicit val Q: QueryFile.Ops[S]) {
   import Q.transforms._
 
   // TODO[scalaz]: Shadow the scalaz.Monad.monadMTMAB SI-2712 workaround
   import EitherT.eitherTMonad
-
-  /** Enumerates the result of executing the given SQL^2 query. */
-  def enumerateQuery(
-    query: Fix[Sql],
-    vars: Variables,
-    basePath: ADir,
-    off: Natural,
-    lim: Option[Positive]
-  ): CompExecM[EnumeratorT[Data, ExecM]] =
-    compToCompExec(queryPlan(query, vars, basePath, off, lim))
-      .map(_.fold(EnumeratorT.enumList(_), Q.enumerate(_)))
 
   /** Returns the source of values from the result of executing the given
     * SQL^2 query.
@@ -86,6 +74,19 @@ class FilesystemQueries[S[_]](implicit val Q: QueryFile.Ops[S]) {
   ): CompExecM[ExecutionPlan] =
     compToCompExec(queryPlan(query, vars, basePath, 0L, None))
       .flatMap(lp => execToCompExec(lp.fold(
-        κ(ExecutionPlan(FileSystemType("none"), "Constant").point[ExecM]),
+        κ(ExecutionPlan(FileSystemType("none"), "Constant", ISet.empty).point[ExecM]),
         Q.explain(_))))
+
+  /** The results of executing the given SQL^2 query. */
+  def queryResults(
+    query: Fix[Sql],
+    vars: Variables,
+    basePath: ADir,
+    off: Natural,
+    lim: Option[Positive]
+  ): CompExecM[Process0[Data]] =
+    compToCompExec(queryPlan(query, vars, basePath, off, lim))
+      .flatMap(_.fold(
+        ds => Process.emitAll(ds).point[CompExecM],
+        lp => execToCompExec(Q.results(lp))))
 }

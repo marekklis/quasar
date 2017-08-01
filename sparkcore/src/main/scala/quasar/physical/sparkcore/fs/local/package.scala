@@ -16,28 +16,28 @@
 
 package quasar.physical.sparkcore.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.connector.EnvironmentError
 import quasar.contrib.pathy._
 import quasar.effect._
 import quasar.fp.TaskRef
 import quasar.fp.free._
 import quasar.fs._, QueryFile.ResultHandle, ReadFile.ReadHandle, WriteFile.WriteHandle
-import quasar.fs.mount.{ConnectionUri, FileSystemDef}, FileSystemDef._
-import quasar.physical.sparkcore.fs.{queryfile => corequeryfile, readfile => corereadfile}
+import quasar.fs.mount.{ConnectionUri, BackendDef}, BackendDef._
+import quasar.physical.sparkcore.fs.{queryfile => corequeryfile, readfile => corereadfile, genSc => coreGenSc}
 
 import java.io.PrintWriter
 
 import org.apache.spark._
 import pathy.Path._
-import scalaz._, Scalaz._
+import scalaz.{Failure => _, _}, Scalaz._
 import scalaz.concurrent.Task
 
 package object local {
 
   import corequeryfile.RddState
 
-  val FsType = FileSystemType("sparklocal")
+  val FsType = FileSystemType("spark-local")
 
   type EffM1[A] = Coproduct[KeyValueStore[ResultHandle, RddState, ?], Read[SparkContext, ?], A]
   type Eff0[A] = Coproduct[KeyValueStore[ReadHandle, SparkCursor, ?], EffM1, A]
@@ -57,33 +57,25 @@ package object local {
       def forge(master: String, rootPath: String): DefinitionError \/ (SparkConf, SparkFSConf) =
         posixCodec.parseAbsDir(rootPath)
           .map { prefix =>
-          val sc = new SparkConf().setMaster(master)
-          (sc, SparkFSConf(sc, sandboxAbs(prefix)))
+          val sc = new SparkConf().setMaster(master).setAppName("quasar")
+          (sc, SparkFSConf(sc, unsafeSandboxAbs(prefix)))
         }.fold(error(s"Could not extract a path from $rootPath"))(_.right[DefinitionError])
 
-      uri.value.split('|').toList match {
-        case master :: prefixPath :: Nil => forge(master, prefixPath)
-        case _ =>
-          error("Missing master and prefixPath (seperated by |)" +
-            " e.g spark://host:port|/var/hadoop/")
-      }
+      forge("local[*]", uri.value)
     }
 
   def sparkFsDef[S[_]](implicit
     S0: Task :<: S,
-    S1: PhysErr :<: S
+    S1: PhysErr :<: S,
+    FailOps: Failure.Ops[PhysicalError, S]
   ): SparkConf => Free[S, SparkFSDef[Eff, S]] = (sparkConf: SparkConf) => {
 
-    val genSc = Task.delay {
-      new SparkContext(sparkConf.setAppName("quasar"))
-    }
-
-    lift((TaskRef(0L) |@|
+    val definition: SparkContext => Free[S, SparkFSDef[Eff, S]] = (sc: SparkContext) => lift((TaskRef(0L) |@|
       TaskRef(Map.empty[ResultHandle, RddState]) |@|
       TaskRef(Map.empty[ReadHandle, SparkCursor]) |@|
-      TaskRef(Map.empty[WriteHandle, PrintWriter]) |@|
-      genSc) {
-      (genState, rddStates, sparkCursors, printWriters, sc) =>
+      TaskRef(Map.empty[WriteHandle, PrintWriter])
+      ) {
+      (genState, rddStates, sparkCursors, printWriters) =>
       val interpreter: Eff ~> S = (MonotonicSeq.fromTaskRef(genState) andThen injectNT[Task, S]) :+:
       injectNT[PhysErr, S] :+:
       injectNT[Task, S]  :+:
@@ -94,6 +86,11 @@ package object local {
 
       SparkFSDef(mapSNT[Eff, S](interpreter), lift(Task.delay(sc.stop())).into[S])
     }).into[S]
+
+    lift(coreGenSc(sparkConf).run).into[S] >>= (_.fold(
+      msg => FailOps.fail[SparkFSDef[Eff, S]](UnhandledFSError(new RuntimeException(msg))),
+      definition(_)
+    ))
   }
 
   def fsInterpret: SparkFSConf => (FileSystem ~> Free[Eff, ?]) =

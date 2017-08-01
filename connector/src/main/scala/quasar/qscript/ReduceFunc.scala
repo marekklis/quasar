@@ -16,14 +16,14 @@
 
 package quasar.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._
 import quasar.std.StdLib._
 
 import matryoshka._
 import scalaz._, Scalaz._
 
-sealed trait ReduceFunc[A]
+sealed abstract class ReduceFunc[A]
 
 object ReduceFunc {
   import ReduceFuncs._
@@ -119,6 +119,8 @@ object ReduceFunc {
     case agg.Sum                 => Sum(_)
     case agg.Min                 => Min(_)
     case agg.Max                 => Max(_)
+    case agg.First               => First(_)
+    case agg.Last                => Last(_)
     case agg.Avg                 => Avg(_)
     case agg.Arbitrary           => Arbitrary(_)
     case structural.UnshiftArray => UnshiftArray(_)
@@ -126,6 +128,20 @@ object ReduceFunc {
 
   def translateBinaryReduction[A]: BinaryFunc => (A, A) => ReduceFunc[A] = {
     case structural.UnshiftMap => UnshiftMap(_, _)
+  }
+
+  /** Indicates whether the order of the set going into the reduction is important. */
+  val isOrderDependent: ReduceFunc[_] => Boolean = {
+    case Count(_)         => false
+    case Sum(_)           => false
+    case Min(_)           => false
+    case Max(_)           => false
+    case Avg(_)           => false
+    case Arbitrary(_)     => false
+    case First(_)         => true
+    case Last(_)          => true
+    case UnshiftArray(_)  => true
+    case UnshiftMap(_, _) => true
   }
 }
 

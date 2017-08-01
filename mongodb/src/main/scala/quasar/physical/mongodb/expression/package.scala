@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Type, RenderTree, Terminal}, Type.⨿
 import quasar.jscore, jscore.{JsCore, JsFn}
 import quasar.Planner.{PlannerError, UnsupportedJS}

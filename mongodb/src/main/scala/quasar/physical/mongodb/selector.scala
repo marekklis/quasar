@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{RenderTree, Terminal, NonTerminal}
 import quasar.fp._
 import quasar.javascript._
@@ -25,7 +25,7 @@ import scala.Any
 
 import scalaz._, Scalaz._
 
-sealed trait Selector {
+sealed abstract class Selector {
   def bson: Bson.Doc
 
   import Selector._
@@ -40,6 +40,7 @@ sealed trait Selector {
 
   private def mapUp0(f: BsonField => BsonField): Selector = mapUpFieldsM[Id](f(_).point[Id])
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def mapUpFieldsM[M[_]: Monad](f: BsonField => M[BsonField]): M[Selector] =
     this match {
       case Doc(pairs)       => pairs.toList.traverse { case (field, expr) => f(field).map(_ -> expr) }.map(ps => Doc(ps.toListMap))
@@ -55,6 +56,7 @@ sealed trait Selector {
       case Selector.NotExpr(cond) => Selector.Expr(cond)
     }
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def loop(s: Selector): Selector = s match {
       case Selector.Doc(pairs) =>
         pairs.toList
@@ -76,6 +78,7 @@ object Selector {
     new RenderTree[Selector] {
       val SelectorNodeType = List("Selector")
 
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def render(sel: Selector) = sel match {
         case and: And     => NonTerminal("And" :: SelectorNodeType, None, and.flatten.map(render))
         case or: Or       => NonTerminal("Or" :: SelectorNodeType, None, or.flatten.map(render))
@@ -93,7 +96,7 @@ object Selector {
       }
     }
 
-  sealed trait Condition {
+  sealed abstract class Condition {
     def bson: Bson
   }
 
@@ -185,7 +188,7 @@ object Selector {
     protected def rhs = Bson.Int32(size)
   }
 
-  sealed trait SelectorExpr {
+  sealed abstract class SelectorExpr {
     def bson: Bson
   }
 
@@ -219,11 +222,12 @@ object Selector {
       Doc(ListMap(pairs.map(t => t._1 -> Expr(t._2)): _*))
   }
 
-  sealed trait CompoundSelector extends Selector {
+  sealed abstract class CompoundSelector extends Selector {
     protected def op: String
     def left: Selector
     def right: Selector
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def flatten: List[Selector] = {
       def loop(sel: Selector) = sel match {
         case sel: CompoundSelector if (this.op == sel.op) => sel.flatten

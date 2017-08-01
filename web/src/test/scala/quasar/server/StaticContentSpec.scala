@@ -16,7 +16,7 @@
 
 package quasar.server
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import scalaz._
 

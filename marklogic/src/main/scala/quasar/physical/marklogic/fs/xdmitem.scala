@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.Data
 import quasar.fs.FileSystemError
 import quasar.physical.marklogic.{ErrorMessages, MonadErrMsgs}
@@ -33,7 +33,7 @@ import java.time._
 import scalaz._, Scalaz._
 
 object xdmitem {
-  @SuppressWarnings(Array("org.wartremover.warts.ToString"))
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion", "org.wartremover.warts.ToString"))
   def toData[F[_]: MonadErrMsgs](xdm: XdmItem): F[Data] = xdm match {
     case item: CtsBox                   =>
       Data.singletonObj("cts:box", Data.Obj(ListMap(

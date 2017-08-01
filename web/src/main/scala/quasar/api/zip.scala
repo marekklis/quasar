@@ -16,7 +16,7 @@
 
 package quasar.api
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp.ski._
 import quasar.contrib.pathy.sandboxCurrent
 
@@ -32,7 +32,7 @@ import scodec.interop.scalaz._
 object Zip {
   // First construct a single Process of Ops which can be performed in
   // sequence to produce the entire archive.
-  private sealed trait Op extends Product with Serializable
+  private sealed abstract class Op extends Product with Serializable
   private object Op {
     final case object Start                           extends Op
     final case class StartEntry(entry: jzip.ZipEntry) extends Op
@@ -53,9 +53,11 @@ object Zip {
 
     private val sink = {
       val os = new java.io.OutputStream {
+        @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
         def write(b: Int) = append(ByteVector(b.toByte))
 
         // NB: overriding here to process each buffer-worth coming from the ZipOS in one call
+        @SuppressWarnings(Array("org.wartremover.warts.Overloading"))
         override def write(b: Array[Byte], off: Int, len: Int) = append(ByteVector(b, off, len))
       }
       new jzip.ZipOutputStream(os)

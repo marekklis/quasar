@@ -16,7 +16,7 @@
 
 package quasar.std
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, DateArbitrary, GenericFunc}
 import quasar.RenderTree.ops._
 import quasar.fp.ski._
@@ -40,6 +40,12 @@ class SimplifyStdLibSpec extends StdLibSpec {
 
   def shortCircuit[N <: Nat](func: GenericFunc[N], args: List[Data]): Result \/ Unit = (func, args) match {
     case (relations.Between, _) => notHandled
+
+    case (relations.Eq, List(Data.Date(_), Data.Timestamp(_))) => notHandled
+    case (relations.Lt, List(Data.Date(_), Data.Timestamp(_))) => notHandled
+    case (relations.Lte, List(Data.Date(_), Data.Timestamp(_))) => notHandled
+    case (relations.Gt, List(Data.Date(_), Data.Timestamp(_))) => notHandled
+    case (relations.Gte, List(Data.Date(_), Data.Timestamp(_))) => notHandled
 
     case (date.ExtractCentury, _) => notHandled
     case (date.ExtractDayOfMonth, _) => notHandled

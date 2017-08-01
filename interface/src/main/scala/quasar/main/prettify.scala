@@ -16,7 +16,7 @@
 
 package quasar.main
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp._
 import quasar.fp.ski._
 import quasar._
@@ -27,7 +27,7 @@ import eu.timepit.refined.auto._
 import scalaz._, Scalaz._
 
 object Prettify {
-  sealed trait Segment extends Product with Serializable
+  sealed abstract class Segment extends Product with Serializable
   final case class FieldSeg(name: String) extends Segment
   final case class IndexSeg(index: Int) extends Segment
 
@@ -76,6 +76,7 @@ object Prettify {
   }
 
   def flatten(data: Data): ListMap[Path, Data] = {
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def loop(data: Data): Data \/ List[(Path, Data)] = {
       def prepend(name: Segment, data: Data): List[(Path, Data)] =
         loop(data) match {
@@ -98,6 +99,7 @@ object Prettify {
   def unflatten(values: ListMap[Path, Data]): Data = {
     val init = Data.Obj()
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def append(v: Data, p: Path, d: Data): Data = (v, p) match {
       case (Data.Obj(values), Path(FieldSeg(s) :: Nil)) =>
         Data.Obj(values + (s -> d))
@@ -121,7 +123,7 @@ object Prettify {
     values.foldLeft[Data](init) { case (v, (p, str)) => append(v, p, str) }
   }
 
-  sealed trait Aligned[A] {
+  sealed abstract class Aligned[A] {
     def value: A
   }
   object Aligned {

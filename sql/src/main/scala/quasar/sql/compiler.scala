@@ -16,8 +16,8 @@
 
 package quasar.sql
 
-import quasar.Predef._
-import quasar.{BinaryFunc, Data, Func, GenericFunc, NullaryFunc, Reduction, SemanticError, Sifting, TernaryFunc, UnaryFunc, VarName},
+import slamdata.Predef._
+import quasar.{Data, Func, GenericFunc, HomomorphicFunction, Reduction, SemanticError, Sifting, UnaryFunc, VarName},
   SemanticError._
 import quasar.contrib.pathy._
 import quasar.contrib.scalaz._
@@ -26,7 +26,8 @@ import quasar.common.SortDir
 import quasar.fp._
 import quasar.fp.binder._
 import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
-import quasar.std.StdLib, StdLib._, date.TemporalPart
+import quasar.std.StdLib, StdLib._
+import quasar.std.TemporalPart
 import quasar.sql.{SemanticAnalysis => SA}, SA._
 
 import matryoshka._
@@ -152,8 +153,8 @@ private object CompilerState {
     m.get ∘ (_.context.tableContext.headOption.map(_.full()))
 
   /** Generates a fresh name for use as an identifier, e.g. tmp321. */
-  def freshName[M[_], T](prefix: String)(implicit m: MonadState[M, CompilerState[T]]): M[Symbol] =
-    m.get ∘ (s => Symbol(prefix + s.nameGen.toString)) <*
+  def freshName[M[_], T](prefix: String)(implicit m: MonadState[M, CompilerState[T]]): M[scala.Symbol] =
+    m.get ∘ (s => scala.Symbol(prefix + s.nameGen.toString)) <*
       m.modify((s: CompilerState[T]) => s.copy(nameGen = s.nameGen + 1))
 }
 
@@ -182,89 +183,72 @@ final class Compiler[M[_], T: Equal]
   type CoExpr = Cofree[Sql, SA.Annotations]
 
   // CORE COMPILER
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   private def compile0
     (node: CoExpr)
     (implicit
       MErr: MonadError_[M, SemanticError],
       MState: MonadState[M, CompilerState[T]])
       : M[T] = {
-
     // NB: When there are multiple names for the same function, we may mark one
     //     with an `*` to indicate that it’s the “preferred” name, and others
     //     are for compatibility with other SQL dialects.
-    val functionMapping = Map[String, GenericFunc[_]](
-      "count"                   -> agg.Count,
-      "sum"                     -> agg.Sum,
-      "min"                     -> agg.Min,
-      "max"                     -> agg.Max,
-      "avg"                     -> agg.Avg,
-      "arbitrary"               -> agg.Arbitrary,
-      "array_length"            -> array.ArrayLength,
-      "extract_century"         -> date.ExtractCentury,
-      "extract_day_of_month"    -> date.ExtractDayOfMonth,
-      "extract_decade"          -> date.ExtractDecade,
-      "extract_day_of_week"     -> date.ExtractDayOfWeek,
-      "extract_day_of_year"     -> date.ExtractDayOfYear,
-      "extract_epoch"           -> date.ExtractEpoch,
-      "extract_hour"            -> date.ExtractHour,
-      "extract_iso_day_of_week" -> date.ExtractIsoDayOfWeek,
-      "extract_iso_year"        -> date.ExtractIsoYear,
-      "extract_microseconds"    -> date.ExtractMicroseconds,
-      "extract_millennium"      -> date.ExtractMillennium,
-      "extract_milliseconds"    -> date.ExtractMilliseconds,
-      "extract_minute"          -> date.ExtractMinute,
-      "extract_month"           -> date.ExtractMonth,
-      "extract_quarter"         -> date.ExtractQuarter,
-      "extract_second"          -> date.ExtractSecond,
-      "extract_timezone"        -> date.ExtractTimezone,
-      "extract_timezone_hour"   -> date.ExtractTimezoneHour,
-      "extract_timezone_minute" -> date.ExtractTimezoneMinute,
-      "extract_week"            -> date.ExtractWeek,
-      "extract_year"            -> date.ExtractYear,
-      "date"                    -> date.Date,
-      "clock_timestamp"         -> date.Now, // Postgres (instantaneous)
-      "current_timestamp"       -> date.Now, // *, SQL92
-      "getdate"                 -> date.Now, // SQL Server
-      "localtimestamp"          -> date.Now, // MySQL, Postgres (trans start)
-      "now"                     -> date.Now, // MySQL, Postgres (trans start)
-      "statement_timestamp"     -> date.Now, // Postgres (statement start)
-      "transaction_timestamp"   -> date.Now, // Postgres (trans start)
-      "time"                    -> date.Time,
-      "timestamp"               -> date.Timestamp,
-      "interval"                -> date.Interval,
-      "start_of_day"            -> date.StartOfDay,
-      "time_of_day"             -> date.TimeOfDay,
-      "to_timestamp"            -> date.ToTimestamp,
-      "squash"                  -> identity.Squash,
-      "oid"                     -> identity.ToId,
-      "type_of"                 -> identity.TypeOf,
-      "between"                 -> relations.Between,
-      "where"                   -> set.Filter,
-      "distinct"                -> set.Distinct,
-      "within"                  -> set.Within,
-      "constantly"              -> set.Constantly,
-      "concat"                  -> string.Concat,
-      "like"                    -> string.Like,
-      "search"                  -> string.Search,
-      "length"                  -> string.Length,
-      "lower"                   -> string.Lower,
-      "upper"                   -> string.Upper,
-      "substring"               -> string.Substring,
-      "boolean"                 -> string.Boolean,
-      "integer"                 -> string.Integer,
-      "decimal"                 -> string.Decimal,
-      "null"                    -> string.Null,
-      "to_string"               -> string.ToString,
-      "make_object"             -> structural.MakeObject,
-      "make_array"              -> structural.MakeArray,
-      "object_concat"           -> structural.ObjectConcat,
-      "array_concat"            -> structural.ArrayConcat,
-      "delete_field"            -> structural.DeleteField,
-      "flatten_map"             -> structural.FlattenMap,
-      "flatten_array"           -> structural.FlattenArray,
-      "shift_map"               -> structural.ShiftMap,
-      "shift_array"             -> structural.ShiftArray,
-      "meta"                    -> structural.Meta)
+    val functionMapping = Map[CIName, GenericFunc[_]](
+      CIName("count")                   -> agg.Count,
+      CIName("sum")                     -> agg.Sum,
+      CIName("min")                     -> agg.Min,
+      CIName("max")                     -> agg.Max,
+      CIName("avg")                     -> agg.Avg,
+      CIName("arbitrary")               -> agg.Arbitrary,
+      CIName("array_length")            -> array.ArrayLength,
+      CIName("date")                    -> date.Date,
+      CIName("clock_timestamp")         -> date.Now, // Postgres (instantaneous)
+      CIName("current_timestamp")       -> date.Now, // *, SQL92
+      CIName("getdate")                 -> date.Now, // SQL Server
+      CIName("localtimestamp")          -> date.Now, // MySQL, Postgres (trans start)
+      CIName("now")                     -> date.Now, // MySQL, Postgres (trans start)
+      CIName("statement_timestamp")     -> date.Now, // Postgres (statement start)
+      CIName("transaction_timestamp")   -> date.Now, // Postgres (trans start)
+      CIName("time")                    -> date.Time,
+      CIName("timestamp")               -> date.Timestamp,
+      CIName("interval")                -> date.Interval,
+      CIName("start_of_day")            -> date.StartOfDay,
+      CIName("time_of_day")             -> date.TimeOfDay,
+      CIName("to_timestamp")            -> date.ToTimestamp,
+      CIName("squash")                  -> identity.Squash,
+      CIName("oid")                     -> identity.ToId,
+      CIName("type_of")                 -> identity.TypeOf,
+      CIName("abs")                     -> math.Abs,
+      CIName("ceil")                    -> math.Ceil,
+      CIName("floor")                   -> math.Floor,
+      CIName("trunc")                   -> math.Trunc,
+      CIName("between")                 -> relations.Between,
+      CIName("where")                   -> set.Filter,
+      CIName("distinct")                -> set.Distinct,
+      CIName("within")                  -> set.Within,
+      CIName("constantly")              -> set.Constantly,
+      CIName("concat")                  -> string.Concat,
+      CIName("like")                    -> string.Like,
+      CIName("search")                  -> string.Search,
+      CIName("length")                  -> string.Length,
+      CIName("lower")                   -> string.Lower,
+      CIName("upper")                   -> string.Upper,
+      CIName("substring")               -> string.Substring,
+      CIName("boolean")                 -> string.Boolean,
+      CIName("integer")                 -> string.Integer,
+      CIName("decimal")                 -> string.Decimal,
+      CIName("null")                    -> string.Null,
+      CIName("to_string")               -> string.ToString,
+      CIName("make_object")             -> structural.MakeObject,
+      CIName("make_array")              -> structural.MakeArray,
+      CIName("object_concat")           -> structural.ObjectConcat,
+      CIName("array_concat")            -> structural.ArrayConcat,
+      CIName("delete_field")            -> structural.DeleteField,
+      CIName("flatten_map")             -> structural.FlattenMap,
+      CIName("flatten_array")           -> structural.FlattenArray,
+      CIName("shift_map")               -> structural.ShiftMap,
+      CIName("shift_array")             -> structural.ShiftArray,
+      CIName("meta")                    -> structural.Meta)
 
     def compileCases
       (cases: List[Case[CoExpr]], default: T)
@@ -274,6 +258,7 @@ final class Compiler[M[_], T: Equal]
           relations.Cond(cond, expr, default).embed
       })
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def flattenJoins(term: T, relations: SqlRelation[CoExpr]):
         T = relations match {
       case _: NamedRelation[_]             => term
@@ -285,6 +270,7 @@ final class Compiler[M[_], T: Equal]
 
     def buildJoinDirectionMap(relations: SqlRelation[CoExpr]):
         Map[String, List[JoinDir]] = {
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def loop(rel: SqlRelation[CoExpr], acc: List[JoinDir]):
           Map[String, List[JoinDir]] = rel match {
         case t: NamedRelation[_] => Map(t.aliasName -> acc)
@@ -361,6 +347,7 @@ final class Compiler[M[_], T: Equal]
         .getOrElse(lpr.constant(Data.Obj()))
     }
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def compileRelation(r: SqlRelation[CoExpr]): M[T] =
       r match {
         case IdentRelationAST(name, _) =>
@@ -378,25 +365,16 @@ final class Compiler[M[_], T: Equal]
 
         case JoinRelation(left, right, tpe, clause) =>
           (CompilerState.freshName("left") ⊛ CompilerState.freshName("right"))((leftName, rightName) => {
-            val leftFree: T = lpr.free(leftName)
-            val rightFree: T = lpr.free(rightName)
+            val leftFree: T = lpr.joinSideName(leftName)
+            val rightFree: T = lpr.joinSideName(rightName)
 
             (compileRelation(left) ⊛
               compileRelation(right) ⊛
               CompilerState.contextual(
                 BindingContext(Map()),
-                tableContext(leftFree, left) ++ tableContext(rightFree, right))(
-                compile0(clause).map(c =>
-                  lpr.invoke(
-                    tpe match {
-                      case LeftJoin             => set.LeftOuterJoin
-                      case quasar.sql.InnerJoin => set.InnerJoin
-                      case RightJoin            => set.RightOuterJoin
-                      case FullJoin             => set.FullOuterJoin
-                    },
-                    Func.Input3(leftFree, rightFree, c)))))((left0, right0, join) =>
-              lpr.let(leftName, left0,
-                lpr.let(rightName, right0, join)))
+                tableContext(leftFree, left) ++ tableContext(rightFree, right))
+              (compile0(clause)))((left0, right0, clause0) =>
+                lpr.join(left0, right0, tpe, JoinCondition(leftName, rightName, clause0)))
           }).join
       }
 
@@ -443,7 +421,7 @@ final class Compiler[M[_], T: Equal]
     }
 
     def temporalPartFunc[A](
-      name: String, args: List[CoExpr], f1: String => Option[A], f2: (A, T) => M[T]
+      name: CIName, args: List[CoExpr], f1: String => Option[A], f2: (A, T) => M[T]
     ): M[T] =
       args.traverse(compile0).flatMap {
         case Embed(Constant(Data.Str(part))) :: expr :: Nil =>
@@ -453,7 +431,7 @@ final class Compiler[M[_], T: Equal]
         case _ :: _ :: Nil =>
           fail(UnexpectedDatePart(pprint(forgetAnnotation[CoExpr, Fix[Sql], Sql, SA.Annotations](args(0)))))
         case _ =>
-          fail(WrongArgumentCount(name.toUpperCase, 2, args.length))
+          fail(WrongArgumentCount(name, 2, args.length))
       }
 
     node.tail match {
@@ -570,7 +548,7 @@ final class Compiler[M[_], T: Equal]
           })
 
       case Let(name, form, body) => {
-        val rel = ExprRelationAST(form, name)
+        val rel = ExprRelationAST(form, name.value)
         step(rel)(compile0(form).some)(compile0(body))
       }
 
@@ -621,15 +599,15 @@ final class Compiler[M[_], T: Equal]
           case IntersectAll  => set.Intersect.left
           // TODO: These two cases are eliminated by `normalizeƒ` and would be
           //       better represented in a Coproduct.
-          case f @ Union     => fail(FunctionNotFound(f.name)).right
-          case f @ Intersect => fail(FunctionNotFound(f.name)).right
+          case f @ Union     => fail(GenericError("Should not have encountered a union at this point in compilation")).right
+          case f @ Intersect => fail(GenericError("Should not have encountered an intersect at this point in compilation")).right
         }): GenericFunc[nat._2] \/ M[T])
           .valueOr(compileFunction[nat._2](_, Func.Input2(left, right)))
 
       case Unop(expr, op) =>
         ((op match {
           case Not                 => relations.Not.left
-          case f @ Exists          => fail(FunctionNotFound(f.name)).right
+          case f @ Exists          => fail(GenericError("Should not have encountered an exists at this point in compilation")).right
           // TODO: NOP, but should we ensure we have a Num or Interval here?
           case Positive            => compile0(expr).right
           case Negative            => math.Negate.left
@@ -648,7 +626,7 @@ final class Compiler[M[_], T: Equal]
 
       case Ident(name) =>
         CompilerState.fields.flatMap(fields =>
-          if (fields.any(_ == name))
+          if (fields.any(_ ≟ name))
             CompilerState.rootTableReq[M, T] ∘
             (structural.ObjectProject(_, lpr.constant(Data.Str(name))).embed)
           else
@@ -660,57 +638,36 @@ final class Compiler[M[_], T: Equal]
               else structural.ObjectProject(table, lpr.constant(Data.Str(name))).embed)
 
       case InvokeFunction(name, args) if
-          name.toLowerCase ≟ "date_part"  || name.toLowerCase ≟ "temporal_part" =>
+          name ≟ CIName("date_part")  || name ≟ CIName("temporal_part") =>
         temporalPartFunc(name, args, extractFunc, (f: UnaryFunc, expr: T) => emit(f(expr).embed))
 
       case InvokeFunction(name, args) if
-          name.toLowerCase ≟ "date_trunc" || name.toLowerCase ≟ "temporal_trunc" =>
+          name ≟ CIName("date_trunc") || name ≟ CIName("temporal_trunc") =>
         temporalPartFunc(name, args, temporalPart, (p: TemporalPart, expr: T) => emit(TemporalTrunc(p, expr).embed))
 
-      case InvokeFunction(name, Nil) =>
-        functionMapping.get(name.toLowerCase).fold[M[T]](
-          fail(FunctionNotFound(name))) {
-          case func @ NullaryFunc(_, _, _, _) =>
-            compileFunction[nat._0](func, Sized[List]())
-          case func => fail(WrongArgumentCount(name, func.arity, 0))
-        }
-
-      case InvokeFunction(name, List(a1)) =>
-        functionMapping.get(name.toLowerCase).fold[M[T]](
-          fail(FunctionNotFound(name))) {
-          case func @ UnaryFunc(_, _, _, _, _, _, _) =>
-            compileFunction[nat._1](func, Func.Input1(a1))
-          case func => fail(WrongArgumentCount(name, func.arity, 1))
-        }
-
-      case InvokeFunction(name, List(a1, a2)) =>
-        (name.toLowerCase ≟ "coalesce").fold((CompilerState.freshName("c") ⊛ compile0(a1) ⊛ compile0(a2))((name, c1, c2) =>
-          lpr.let(name, c1,
-            relations.Cond(
-              // TODO: Ideally this would use `is null`, but that doesn’t makes it
-              //       this far (but it should).
-              relations.Eq(lpr.free(name), lpr.constant(Data.Null)).embed,
-              c2,
-              lpr.free(name)).embed)),
-          functionMapping.get(name.toLowerCase).fold[M[T]](
-            fail(FunctionNotFound(name))) {
-            case func @ BinaryFunc(_, _, _, _, _, _, _) =>
-              compileFunction[nat._2](func, Func.Input2(a1, a2))
-            case func => fail(WrongArgumentCount(name, func.arity, 2))
-          })
-
-      case InvokeFunction(name, List(a1, a2, a3)) =>
-        functionMapping.get(name.toLowerCase).fold[M[T]](
-          fail(FunctionNotFound(name))) {
-          case func @ TernaryFunc(_, _, _, _, _, _, _) =>
-            compileFunction[nat._3](func, Func.Input3(a1, a2, a3))
-          case func => fail(WrongArgumentCount(name, func.arity, 3))
+      // A call to the SQL coalesce function does not map to an invocation of a function in Logical Plan
+      // so here we inline the logical plan that it should produce
+      case InvokeFunction(name, args) if name ≟ CIName("coalesce") =>
+        args match {
+          case List(a1, a2) =>
+            (CompilerState.freshName("c") ⊛ compile0(a1) ⊛ compile0(a2))((name, c1, c2) =>
+              lpr.let(name, c1,
+                relations.Cond(
+                  // TODO: Ideally this would use `is null`, but that doesn’t makes it
+                  //       this far (but it should).
+                  relations.Eq(lpr.free(name), lpr.constant(Data.Null)).embed,
+                  c2,
+                  lpr.free(name)).embed))
+          case xs => fail(WrongArgumentCount(name, 2, xs.size))
         }
 
       case InvokeFunction(name, args) =>
-        functionMapping.get(name.toLowerCase).fold[M[T]](
-          fail(FunctionNotFound(name)))(
-          func => fail(WrongArgumentCount(name, func.arity, args.length)))
+        val function: Option[HomomorphicFunction[T, T]] = functionMapping.mapValues(_.toFunction[T].andThen(_.embed)).lift.apply(name)
+        function.cata[M[T]](
+          func => args.traverse(compile0).flatMap(func.apply(_).cata(
+            successfulInvoke => successfulInvoke.point[M],
+            fail(WrongArgumentCount(name, func.arity, args.size)))),
+          fail(FunctionNotFound(name)))
 
       case Match(expr, cases, default0) =>
         for {
@@ -735,7 +692,7 @@ final class Compiler[M[_], T: Equal]
       case StringLiteral(value) => emit(lpr.constant(Data.Str(value)))
       case BoolLiteral(value) => emit(lpr.constant(Data.Bool(value)))
       case NullLiteral() => emit(lpr.constant(Data.Null))
-      case Vari(name) => emit(lpr.free(Symbol(name)))
+      case Vari(name) => emit(lpr.free(scala.Symbol(name)))
     }
   }
 
@@ -746,9 +703,8 @@ final class Compiler[M[_], T: Equal]
     (implicit
       MErr: MonadError_[M, SemanticError],
       MState: MonadState[M, CompilerState[T]])
-      : M[T] = {
+      : M[T] =
     compile0(tree).map(Compiler.reduceGroupKeys[T])
-  }
 }
 
 object Compiler {
@@ -778,6 +734,7 @@ object Compiler {
     def keysƒ(t: LP[(T, List[T])]):
         (T, List[T]) =
     {
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def groupedKeys(t: LP[T], newSrc: T): Option[List[T]] = {
         t match {
           case InvokeUnapply(set.GroupBy, Sized(src, structural.MakeArrayN(keys))) =>

@@ -16,7 +16,7 @@
 
 package quasar.physical.sparkcore.fs.local
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, DataCodec}
 import quasar.contrib.pathy._
 import quasar.effect.Read
@@ -44,9 +44,9 @@ object readfile {
         .filter {
         case (value, index) =>
           maybeLimit.fold(
-            index >= offset.get
+            index >= offset.value
           ) (
-            limit => index >= offset.get && index < limit.get + offset.get
+            limit => index >= offset.value && index < limit.value + offset.value
           )
       }
     }

@@ -16,7 +16,7 @@
 
 package quasar.fp
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import scala.collection.{Seq => SSeq}
 
@@ -48,6 +48,7 @@ trait ProcessOps {
       * until the predicate returns true or the stream ends. The returned inner
       * `Process` emits the same values, in the same order as this process.
       */
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     final def stepUntil[F2[x] >: F[x], O2 >: O](p: SSeq[O2] => Boolean)(implicit F: Monad[F2], C: Catchable[F2]): F2[Process[F2, O2]] =
       firstStep[F2, O2] flatMap { next =>
         val (hd, tl) = next.unemit

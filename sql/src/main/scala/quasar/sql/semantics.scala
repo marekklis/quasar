@@ -16,7 +16,7 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{NonTerminal, RenderTree, RenderedTree, SemanticError, Terminal, VarName},
   RenderTree.ops._,
   SemanticError._
@@ -28,14 +28,13 @@ import matryoshka._
 import matryoshka.data.Fix
 import matryoshka.implicits._
 import scalaz._, Scalaz._, Validation.{success, failure}
-import shapeless.contrib.scalaz._
 
 object SemanticAnalysis {
   type Failure = NonEmptyList[SemanticError]
 
   private def fail[A](e: SemanticError) = Validation.failure[Failure, A](NonEmptyList(e))
 
-  sealed trait Synthetic
+  sealed abstract class Synthetic
   object Synthetic {
     final case object SortKey extends Synthetic
 
@@ -44,6 +43,25 @@ object SemanticAnalysis {
     implicit val renderTree: RenderTree[Synthetic] =
       RenderTree.fromShow[Synthetic]("Synthetic")
   }
+
+  def normalizeProjectionsƒ[T](implicit TR: Recursive.Aux[T, Sql], TC: Corecursive.Aux[T, Sql])
+      : CoalgebraM[State[Option[String], ?], Sql, T] =
+    _.project match {
+      case sel @ Select(_, _, Some(TableRelationAST(table, alias @ Some(_))), _, _, _) =>
+        constantState(sel, alias)
+      case sel @ Select(_, _, Some(TableRelationAST(table, None)), _, _, _) =>
+        val head: Option[String] = pathy.Path.peel(table).map {
+          case (_, -\/(pathy.Path.DirName(dir))) => dir
+          case (_, \/-(pathy.Path.FileName(file))) => file
+        }
+        constantState(sel, head)
+      case op @ Binop(Embed(Ident(name)), Embed(StringLiteral(expr)), FieldDeref) =>
+        gets {
+          case Some(head) => (head === name).fold(ident[T](expr), op)
+          case None => op
+        }
+      case other => state(other)
+    }
 
   private val syntheticPrefix = "__sd__"
 
@@ -78,8 +96,7 @@ object SemanticAnalysis {
             val proj2 = Proj(expr, Some(name))
             val key2  = (orderType, ident[T](name).embed)
             (proj2 :: projs, key2 :: keys, index + 1)
-          } (
-            kExpr => (projs, (orderType, kExpr) :: keys, index))
+          } (kExpr => (projs, (orderType, kExpr) :: keys, index))
       }
       select(d, projections ⊹ projs2, r, f, g, keys2.toNel map (OrderBy(_))).some
     }
@@ -124,6 +141,7 @@ object SemanticAnalysis {
       CoalgebraM[ValidSem, Sql, (Scope, T)] = {
     case (Scope(ts, bs), Embed(expr)) => expr match {
       case Select(_, _, relations, _, _, _) =>
+        @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
         def findRelations(r: SqlRelation[T]): ValidSem[Map[String, SqlRelation[Unit]]] =
           r match {
             case IdentRelationAST(name, aliasOpt) =>
@@ -151,7 +169,7 @@ object SemanticAnalysis {
 
       case Let(name, form, body) => {
         val bs2: BindingScope =
-          BindingScope(bs.scope ++ Map(name -> ExprRelationAST((), name)))
+          BindingScope(bs.scope ++ Map(name.value -> ExprRelationAST((), name.value)))
 
         success(Let(name, (Scope(ts, bs), form), (Scope(ts, bs2), body)))
       }
@@ -160,22 +178,24 @@ object SemanticAnalysis {
     }
   }
 
-  sealed trait Provenance {
+  sealed abstract class Provenance {
     import Provenance._
 
     def & (that: Provenance): Provenance = Both(this, that)
 
     def | (that: Provenance): Provenance = Either(this, that)
 
+    @SuppressWarnings(Array("org.wartremover.warts.Equals", "org.wartremover.warts.Recursion"))
     def simplify: Provenance = this match {
-      case x : Either => anyOf(x.flatten.map(_.simplify).filterNot(_ == Empty))
-      case x : Both => allOf(x.flatten.map(_.simplify).filterNot(_ == Empty))
+      case x : Either => anyOf(x.flatten.map(_.simplify).filterNot(_.equals(Empty)))
+      case x : Both => allOf(x.flatten.map(_.simplify).filterNot(_.equals(Empty)))
       case _ => this
     }
 
     def namedRelations: Map[String, List[NamedRelation[Unit]]] =
       relations.foldMap(_.namedRelations)
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def relations: List[SqlRelation[Unit]] = this match {
       case Empty => Nil
       case Value => Nil
@@ -188,10 +208,12 @@ object SemanticAnalysis {
 
     // TODO: Implement Order for all sorts of types so we can get Equal (well,
     //       Order, even) defined properly for Provenance.
-    @SuppressWarnings(Array("org.wartremover.warts.AsInstanceOf"))
+    @SuppressWarnings(Array(
+      "org.wartremover.warts.AsInstanceOf",
+      "org.wartremover.warts.Equals"))
     override def equals(that: scala.Any): Boolean = (this, that) match {
       case (x, y) if (x.eq(y.asInstanceOf[AnyRef])) => true
-      case (Relation(v1), Relation(v2))             => v1 == v2
+      case (Relation(v1), Relation(v2))             => v1 ≟ v2
       case (Either(_, _), that @ Either(_, _))      => this.simplify.flatten == that.simplify.flatten
       case (Both(_, _), that @ Both(_, _))          => this.simplify.flatten == that.simplify.flatten
       case (_, _)                                   => false
@@ -208,6 +230,7 @@ object SemanticAnalysis {
 
     implicit val renderTree: RenderTree[Provenance] =
       new RenderTree[Provenance] { self =>
+        @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
         def render(v: Provenance) = {
           val ProvenanceNodeType = List("Provenance")
 
@@ -256,6 +279,7 @@ object SemanticAnalysis {
     final case class Either(left: Provenance, right: Provenance)
         extends Provenance {
       override def flatten: Set[Provenance] = {
+        @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
         def flatten0(x: Provenance): Set[Provenance] = x match {
           case Either(left, right) => flatten0(left) ++ flatten0(right)
           case _ => Set(x)
@@ -266,6 +290,7 @@ object SemanticAnalysis {
     final case class Both(left: Provenance, right: Provenance)
         extends Provenance {
       override def flatten: Set[Provenance] = {
+        @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
         def flatten0(x: Provenance): Set[Provenance] = x match {
           case Both(left, right) => flatten0(left) ++ flatten0(right)
           case _ => Set(x)
@@ -303,11 +328,15 @@ object SemanticAnalysis {
           case None => ts.scope.get(name)
           case s => s
         }
-        scope.fold(
-          Provenance.anyOf[Map[String, ?]]((ts.scope ++ bs.scope) ∘ (Provenance.Relation(_))) match {
+        scope.fold({
+          // If `name` matches neither table nor binding scope we default to table scope.
+          // For example:
+          // `mystate := "CO"; select * from zips where state = mystate`
+          val localScope = if (ts.scope.isEmpty) bs.scope else ts.scope
+          Provenance.anyOf[Map[String, ?]]((localScope) ∘ (Provenance.Relation(_))) match {
             case Provenance.Empty => fail(NoTableDefined(Ident[Fix[Sql]](name).embed))
             case x                => success(x)
-          })(
+          }})(
           (Provenance.Relation(_)) ⋙ success)
       case InvokeFunction(_, args) => success(Provenance.allOf(args))
       case Match(_, cases, _)      =>
@@ -340,9 +369,18 @@ object SemanticAnalysis {
         synthElgotMƒ,
         inferProvenanceƒ)).apply(e.leftMap(_._1)).disjunction
 
-  // NB: projectSortKeys ⋙ (identifySynthetics &&& (scopeTables ⋙ inferProvenance))
-  def AllPhases[T](expr: T)(implicit TR: Recursive.Aux[T, Sql], TC: Corecursive.Aux[T, Sql]) =
-    (Scope(TableScope(Map()), BindingScope(Map())), expr.cata(orOriginal(projectSortKeysƒ) >>> (_.embed)))
-      .coelgotM[NonEmptyList[SemanticError] \/ ?](addAnnotations, scopeTablesƒ.apply(_).disjunction)
+  def normalizeProjections[T](expr: T)(implicit TR: Recursive.Aux[T, Sql], TC: Corecursive.Aux[T, Sql]): T =
+    expr.anaM[T](normalizeProjectionsƒ[T]).run(None)._2
 
+  def projectSortKeys[T](expr: T)(implicit TR: Recursive.Aux[T, Sql], TC: Corecursive.Aux[T, Sql]): T =
+    expr.transCata[T](orOriginal(projectSortKeysƒ))
+
+  // NB: identifySynthetics &&& (scopeTables >>> inferProvenance)
+  def annotate[T](expr: T)(implicit TR: Recursive.Aux[T, Sql], TC: Corecursive.Aux[T, Sql])
+      : NonEmptyList[SemanticError] \/ Cofree[Sql, Annotations] = {
+    val emptyScope: Scope = Scope(TableScope(Map()), BindingScope(Map()))
+    (emptyScope, expr).coelgotM[NonEmptyList[SemanticError] \/ ?](
+      addAnnotations,
+      scopeTablesƒ.apply(_).disjunction)
+  }
 }

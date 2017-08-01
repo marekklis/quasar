@@ -17,7 +17,7 @@
 package quasar.api
 
 import quasar.Data
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.csv.CsvParser
 
 import scalaz.concurrent.Task

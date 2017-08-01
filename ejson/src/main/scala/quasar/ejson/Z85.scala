@@ -16,7 +16,7 @@
 
 package quasar.ejson
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import monocle.Prism
 import scalaz._, Scalaz._

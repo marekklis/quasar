@@ -20,7 +20,7 @@ import quasar.RenderTree
 
 import scalaz._
 
-sealed trait JoinSide
+sealed abstract class JoinSide
 final case object LeftSide extends JoinSide
 final case object RightSide extends JoinSide
 

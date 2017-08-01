@@ -16,7 +16,8 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
+import quasar.common.JoinType
 import quasar.fp.ski._
 import quasar.fp._
 
@@ -27,9 +28,11 @@ import scala.util.parsing.input.CharArrayReader.EofCh
 
 import matryoshka._
 import matryoshka.implicits._
+import pathy.Path
+import pathy.Path._
 import scalaz._, Scalaz._
 
-sealed trait DerefType[T[_[_]]] extends Product with Serializable
+sealed abstract class DerefType[T[_[_]]] extends Product with Serializable
 final case class ObjectDeref[T[_[_]]](expr: T[Sql])      extends DerefType[T]
 final case class ArrayDeref[T[_[_]]](expr: T[Sql])       extends DerefType[T]
 final case class DimChange[T[_[_]]](unop: UnaryOperator) extends DerefType[T]
@@ -62,7 +65,7 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
       delim
 
     def identifierString: Parser[String] =
-      ((letter | elem('_')) ~ rep(digit | letter | elem('_'))) ^^ {
+      letter ~ rep(digit | letter | elem('_')) ^^ {
         case x ~ xs => (x :: xs).mkString
       }
 
@@ -101,13 +104,13 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
     def identParser: Parser[Token] =
       quotedIdentParser | identifierString ^^ processIdent
 
-
     override def whitespace: Parser[scala.Any] = rep(
       whitespaceChar |
       '/' ~ '*' ~ comment |
       '-' ~ '-' ~ rep(chrExcept(EofCh, '\n')) |
       '/' ~ '*' ~ failure("unclosed comment"))
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     override protected def comment: Parser[scala.Any] = (
       '*' ~ '/'  ^^ κ(' ') |
       chrExcept(EofCh) ~ comment)
@@ -127,7 +130,7 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
     elem(
       "keyword '" + name + "'",
       {
-        case lexical.Identifier(chars) => chars.toLowerCase == name
+        case lexical.Identifier(chars) => chars.toLowerCase ≟ name
         case _                         => false
       }) ^^ (κ(name))
 
@@ -141,13 +144,42 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
     if (lexical.delimiters.contains(op))
       elem(
         "operator '" + op + "'",
-        { case lexical.Keyword(chars) => chars == op; case _ => false }) ^^ (_.chars)
+        { case lexical.Keyword(chars) => chars ≟ op; case _ => false }) ^^ (_.chars)
     else failure("You are trying to parse \""+op+"\" as an operator, but it is not contained in the operators list")
 
   def let_expr: Parser[T[Sql]] =
     ident ~ (op(":=") ~> expr) ~ (op(";") ~> expr) ^^ {
-      case i ~ e ~ b => let(i, e, b).embed
+      case i ~ e ~ b => let(CIName(i), e, b).embed
     } | query_expr
+
+  def func_def: Parser[FunctionDecl[T[Sql]]] =
+    keyword("create") ~> keyword("function") ~> ident ~ (op("(") ~> repsep(variable, op(",")) <~ op(")")) ~
+      (keyword("begin") ~> expr <~ keyword("end")) ^^ {
+      case i ~ vars ~ expr => FunctionDecl[T[Sql]](CIName(i), vars.map(v => CIName(v.symbol)), expr)
+    }
+
+  def import_ : Parser[Import[T[Sql]]] =
+    keyword("import") ~> ident >> {
+      case i => posixCodec.parsePath[Option[Path[Any, Dir, Unsandboxed]]](κ(none), κ(none), Some(_), Some(_))(i).cata(
+        path => success(Import(path)),
+        failure("Import must identify a directory"))
+    }
+
+  @SuppressWarnings(Array(
+    "org.wartremover.warts.Product",
+    "org.wartremover.warts.Serializable"))
+  def statements: Parser[List[Statement[T[Sql]]]] =
+    repsep(func_def | import_, op(";")) <~ opt(op(";"))
+
+  def scopedExpr: Parser[ScopedExpr[T[Sql]]] =
+    statements ~ expr ^^ {
+      case stats ~ expr => ScopedExpr(expr, stats)
+    }
+
+  def block: Parser[Block[T[Sql]]] =
+    opt(repsep(func_def, op(";")) <~ op(";")) ~ expr ^^ {
+      case defs ~ expr => Block(expr, defs.getOrElse(Nil))
+    }
 
   def select_expr: Parser[T[Sql]] =
     keyword("select") ~> opt(keyword("distinct")) ~ projections ~
@@ -227,14 +259,14 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
   def between_suffix: Parser[T[Sql] => T[Sql]] =
     keyword("between") ~ default_expr ~ keyword("and") ~ default_expr ^^ {
       case kw ~ lower ~ _ ~ upper =>
-        lhs => invokeFunction(kw, List(lhs, lower, upper)).embed
+        lhs => invokeFunction(CIName(kw), List(lhs, lower, upper)).embed
     }
 
   def in_suffix: Parser[T[Sql] => T[Sql]] =
     keyword("in") ~ default_expr ^^ { case _ ~ a => In(_, a).embed }
 
   private def LIKE(l: T[Sql], r: T[Sql], esc: Option[T[Sql]]) =
-    invokeFunction("like",
+    invokeFunction(CIName("like"),
       List(l, r, esc.getOrElse(stringLiteral[T[Sql]]("\\").embed))).embed
 
   def like_suffix: Parser[T[Sql] => T[Sql]] =
@@ -268,16 +300,16 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
   def default_expr: Parser[T[Sql]] =
     concat_expr * (
       op("~") ^^^ ((l: T[Sql], r: T[Sql]) =>
-        invokeFunction("search",
+        invokeFunction(CIName("search"),
           List(l, r, boolLiteral[T[Sql]](false).embed)).embed) |
         op("~*") ^^^ ((l: T[Sql], r: T[Sql]) =>
-          invokeFunction("search",
+          invokeFunction(CIName("search"),
             List(l, r, boolLiteral[T[Sql]](true).embed)).embed) |
         op("!~") ^^^ ((l: T[Sql], r: T[Sql]) =>
-          Not(invokeFunction("search",
+          Not(invokeFunction(CIName("search"),
             List(l, r, boolLiteral[T[Sql]](false).embed)).embed).embed) |
         op("!~*") ^^^ ((l: T[Sql], r: T[Sql]) =>
-          Not(invokeFunction("search",
+          Not(invokeFunction(CIName("search"),
             List(l, r, boolLiteral[T[Sql]](true).embed)).embed).embed) |
         op("~~") ^^^ ((l: T[Sql], r: T[Sql]) => LIKE(l, r, None)) |
         op("!~~") ^^^ ((l: T[Sql], r: T[Sql]) => Not(LIKE(l, r, None)).embed))
@@ -340,8 +372,9 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
   def paren_list: Parser[List[T[Sql]]] = op("(") ~> repsep(expr, op(",")) <~ op(")")
 
   def function_expr: Parser[T[Sql]] =
-    ident ~ paren_list ^^ { case a ~ xs => invokeFunction(a, xs).embed }
+    ident ~ paren_list ^^ { case a ~ xs => invokeFunction(CIName(a), xs).embed }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def primary_expr: Parser[T[Sql]] =
     case_expr |
     unshift_expr |
@@ -392,7 +425,7 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
 
   def std_join_relation: Parser[SqlRelation[T[Sql]] => SqlRelation[T[Sql]]] =
     opt(join_type) ~ keyword("join") ~ simple_relation ~ keyword("on") ~ expr ^^
-      { case tpe ~ _ ~ r2 ~ _ ~ e => r1 => JoinRelation(r1, r2, tpe.getOrElse(InnerJoin), e) }
+      { case tpe ~ _ ~ r2 ~ _ ~ e => r1 => JoinRelation(r1, r2, tpe.getOrElse(JoinType.Inner), e) }
 
   def cross_join_relation: Parser[SqlRelation[T[Sql]] => SqlRelation[T[Sql]]] =
     keyword("cross") ~> keyword("join") ~> simple_relation ^^ {
@@ -406,10 +439,10 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
 
   def join_type: Parser[JoinType] =
     (keyword("left") | keyword("right") | keyword("full")) <~ opt(keyword("outer")) ^^ {
-      case "left"  => LeftJoin
-      case "right" => RightJoin
-      case "full"  => FullJoin
-    } | keyword("inner") ^^^ (InnerJoin)
+      case "left"  => JoinType.LeftOuter
+      case "right" => JoinType.RightOuter
+      case "full"  => JoinType.FullOuter
+    } | keyword("inner") ^^^ (JoinType.Inner)
 
   def simple_relation: Parser[SqlRelation[T[Sql]]] =
     ident ~ opt(keyword("as") ~> ident) ^^ {
@@ -452,16 +485,27 @@ private[sql] class SQLParser[T[_[_]]: BirecursiveT]
         keyword("intersect")                  ^^^ (Intersect(_: T[Sql], _: T[Sql]).embed)    |
         keyword("except")                     ^^^ (Except(_: T[Sql], _: T[Sql]).embed))
 
-  @SuppressWarnings(Array("org.wartremover.warts.ToString"))
-  def parseExpr(exprSql: String): ParsingError \/ T[Sql] =
-    phrase(expr)(new lexical.Scanner(exprSql)) match {
+  def parseWithParser[A](input: String, parser: Parser[A]): ParsingError \/ A =
+    phrase(parser)(new lexical.Scanner(input)) match {
       case Success(r, q)        => \/.right(r)
       case Error(msg, input)    => \/.left(GenericParsingError(msg))
-      case Failure(msg, input)  => \/.left(GenericParsingError(msg + "; " + input.first.toString))
+      case Failure(msg, input)  => \/.left(GenericParsingError(s"$msg; but found `${input.first.chars}'"))
     }
 
-  private def parse0(sql: Query): ParsingError \/ T[Sql] = parseExpr(sql.value)
+  val parse: Query => ParsingError \/ ScopedExpr[T[Sql]] = query =>
+    parseScopedExpr(query.value)
 
-  val parse: Query => ParsingError \/ T[Sql] =
-    parse0(_).map(_.transAna[T[Sql]](repeatedly(normalizeƒ)).makeTables(Nil))
+  def parseScopedExpr(scopedExprString: String): ParsingError \/ ScopedExpr[T[Sql]] =
+    parseWithParser(scopedExprString, scopedExpr).map(_.map(normalize))
+
+  def parseModule(moduleString: String): ParsingError \/ List[Statement[T[Sql]]] =
+    parseWithParser(moduleString, statements).map(_.map(_.map(normalize)))
+
+  def parseBlock(blockString: String): ParsingError \/ Block[T[Sql]] =
+    parseWithParser(blockString, block).map(_.map(normalize))
+
+  val parseExpr: Query => ParsingError \/ T[Sql] = query =>
+    parseWithParser(query.value, expr).map(normalize)
+
+  private def normalize: T[Sql] => T[Sql] = _.transAna[T[Sql]](repeatedly(normalizeƒ)).makeTables(Nil)
 }

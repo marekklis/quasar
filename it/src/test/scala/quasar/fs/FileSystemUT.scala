@@ -16,7 +16,7 @@
 
 package quasar.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{BackendCapability, BackendRef}
 import quasar.contrib.pathy._
 import quasar.fp.free, free._

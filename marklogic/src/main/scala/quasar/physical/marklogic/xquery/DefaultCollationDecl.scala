@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.physical.marklogic.xquery.syntax._
 
 import monocle.macros.Lenses
@@ -25,7 +25,7 @@ import scalaz.syntax.show._
 
 @Lenses
 final case class DefaultCollationDecl(collation: Collation) {
-  def render: String = s"declare default collation ${collation.value.get.xs.shows}"
+  def render: String = s"declare default collation ${collation.value.value.xs.shows}"
 }
 
 object DefaultCollationDecl {

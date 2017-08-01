@@ -16,18 +16,29 @@
 
 package quasar.repl
 
-import quasar.Predef._
+import slamdata.Predef._
 
-sealed trait DebugLevel
+import monocle.Prism
+import scalaz._, Scalaz._
+
+sealed abstract class DebugLevel
+
 object DebugLevel {
   final case object Silent extends DebugLevel
   final case object Normal extends DebugLevel
   final case object Verbose extends DebugLevel
 
-  def fromInt(code: Int): Option[DebugLevel] = code match {
-    case 0 => Some(Silent)
-    case 1 => Some(Normal)
-    case 2 => Some(Verbose)
-    case _ => None
-  }
+  val int: Prism[Int, DebugLevel] =
+    Prism.partial[Int, DebugLevel] {
+      case 0 => Silent
+      case 1 => Normal
+      case 2 => Verbose
+    } {
+      case Silent  => 0
+      case Normal  => 1
+      case Verbose => 2
+    }
+
+  implicit val equal: Equal[DebugLevel] =
+    Equal.equalBy(int(_))
 }

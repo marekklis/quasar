@@ -16,12 +16,15 @@
 
 package quasar
 
-import quasar.Predef._
+import scala.Predef.implicitly
+import scala.ValueOf
+
+import scalaz._, Scalaz._
 
 /** A small smoke test for the presence of the typelevel compiler.
  */
 class TypelevelSpec extends quasar.Qspec {
   "typelevel compiler features" >> {
-    "should exist" >> (valueOf[5] must_=== 5)
+    "should exist" >> (implicitly[ValueOf[5]].value must_= 5)
   }
 }

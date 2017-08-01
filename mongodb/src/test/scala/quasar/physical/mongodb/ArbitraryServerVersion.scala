@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import org.scalacheck.{Arbitrary, Gen}, Arbitrary.arbitrary
 

@@ -16,7 +16,9 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
+import quasar.RenderTree.make
+import quasar.RenderTree.ops._
 import quasar.fp._
 
 import matryoshka._
@@ -24,9 +26,6 @@ import matryoshka.data._
 import matryoshka.implicits._
 import scalaz._, Scalaz._
 import simulacrum.typeclass
-
-import RenderTree.make
-import RenderTree.ops._
 
 @typeclass trait RenderTree[A] {
   def render(a: A): RenderedTree
@@ -78,10 +77,12 @@ sealed abstract class RenderTreeInstances extends RenderTreeInstances0 {
   implicit def delay[F[_], A: RenderTree](implicit F: Delay[RenderTree, F]): RenderTree[F[A]] =
     F(RenderTree[A])
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   implicit def free[F[_]: Functor](implicit F: Delay[RenderTree, F]): Delay[RenderTree, Free[F, ?]] =
     Delay.fromNT(λ[RenderTree ~> (RenderTree ∘ Free[F, ?])#λ](rt =>
       make(_.resume.fold(F(free[F].apply(rt)).render, rt.render))))
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   implicit def cofree[F[_]](implicit F: Delay[RenderTree, F]): Delay[RenderTree, Cofree[F, ?]] =
     Delay.fromNT(λ[RenderTree ~> (RenderTree ∘ Cofree[F, ?])#λ](rt =>
       make(t => NonTerminal(List("Cofree"), None, List(rt.render(t.head), F(cofree(F)(rt)).render(t.tail))))))
@@ -135,10 +136,13 @@ sealed abstract class RenderTreeInstances extends RenderTreeInstances0 {
   implicit lazy val stringRenderTree: RenderTree[String] =
     RenderTree.fromShow[String]("String")
 
+  implicit lazy val symbolRenderTree: RenderTree[Symbol] =
+    RenderTree.fromShow[Symbol]("Symbol")
+
   implicit def pathRenderTree[B,T,S]: RenderTree[pathy.Path[B,T,S]] =
     // NB: the implicit Show instance in scope here ends up being a circular
     // call, so an explicit reference to pathy's Show is needed.
-    make(p => Terminal(List("Path"), pathy.Path.PathShow.shows(p).some))
+    make(p => Terminal(List("Path"), pathy.Path.pathShow.shows(p).some))
 
   implicit def leftTuple4RenderTree[A, B, C, D](implicit RA: RenderTree[A], RB: RenderTree[B], RC: RenderTree[C], RD: RenderTree[D]):
       RenderTree[(((A, B), C), D)] =

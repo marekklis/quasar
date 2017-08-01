@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef.{ Eq => _, _ }
+import slamdata.Predef.{ Eq => _, _ }
 import quasar._
 import quasar.javascript.Js
 import quasar.jscore._

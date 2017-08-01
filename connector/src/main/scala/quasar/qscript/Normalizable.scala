@@ -16,9 +16,11 @@
 
 package quasar.qscript
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.common.SortDir
+import quasar.contrib.matryoshka._
 import quasar.ejson.EJson
+import quasar.ejson.implicits._
 import quasar.fp._
 import quasar.fp.ski._
 
@@ -68,8 +70,7 @@ trait NormalizableInstances {
   }
 }
 
-class NormalizableT[T[_[_]]: BirecursiveT : EqualT : ShowT]
-    extends TTypes[T] {
+class NormalizableT[T[_[_]]: BirecursiveT : EqualT : ShowT] extends TTypes[T] {
   import Normalizable._
   lazy val rewrite = new Rewrite[T]
 
@@ -87,7 +88,7 @@ class NormalizableT[T[_[_]]: BirecursiveT : EqualT : ShowT]
   }
 
   def freeMF[A: Show](fm: Free[MapFunc, A]): Free[MapFunc, A] =
-    fm.transCata[Free[MapFunc, A]](MapFunc.normalize[T, A])
+    fm.transCata[Free[MapFunc, A]](MapFuncCore.normalize[T, A])
 
   def makeNorm[A, B, C](
     lOrig: A, rOrig: B)(
@@ -142,8 +143,8 @@ class NormalizableT[T[_[_]]: BirecursiveT : EqualT : ShowT]
 
         val bucketNormConst: Option[FreeMap] =
           bucketNormOpt.getOrElse(bucket).resume.fold({
-            case MapFuncs.Constant(ej) =>
-              (!EJson.isNull(ej)).option(MapFuncs.NullLit[T, Hole]())
+            case MFC(MapFuncsCore.Constant(ej)) =>
+              (!EJson.isNull(ej)).option(MapFuncsCore.NullLit[T, Hole]())
             case _ => bucketNormOpt
           }, κ(bucketNormOpt))
 

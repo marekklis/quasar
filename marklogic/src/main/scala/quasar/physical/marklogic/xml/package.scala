@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.Data
 
 import scala.collection.immutable.Seq
@@ -63,6 +63,7 @@ package object xml {
     * }
     */
   def toData(elem: Elem, config: KeywordConfig): Data = {
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def impl(nodes: Seq[Node], m: Option[MetaData]): Data = nodes match {
       case Seq() =>
         m.cata(attrsAndText(_,  ""), _str(""))

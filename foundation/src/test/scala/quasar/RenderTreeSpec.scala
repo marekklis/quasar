@@ -16,7 +16,7 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import argonaut._, Argonaut._
 import argonaut.JsonScalaz._

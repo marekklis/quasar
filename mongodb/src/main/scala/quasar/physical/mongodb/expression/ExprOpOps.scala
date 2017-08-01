@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb.expression
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._, Planner._
 import quasar.physical.mongodb.Bson
 import quasar.jscore, jscore.JsFn

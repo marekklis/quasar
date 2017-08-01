@@ -16,7 +16,7 @@
 
 package quasar.config
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import pathy._, Path._
 class FsPathSpec extends quasar.Qspec {

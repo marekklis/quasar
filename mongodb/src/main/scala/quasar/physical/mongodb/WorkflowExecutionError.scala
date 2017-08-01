@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.RenderTree
 import quasar.fp._
 import quasar.fp.ski._
@@ -27,7 +27,7 @@ import scalaz._
 import scalaz.syntax.show._
 
 /** Error conditions possible during `Workflow` execution. */
-sealed trait WorkflowExecutionError
+sealed abstract class WorkflowExecutionError
 
 object WorkflowExecutionError {
   final case class InvalidTask private (task: WorkflowTask, reason: String)

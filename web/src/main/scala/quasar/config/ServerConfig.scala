@@ -16,7 +16,7 @@
 
 package quasar.config
 
-import quasar.Predef.Int
+import slamdata.Predef.Int
 
 import argonaut._, Argonaut._
 

@@ -5,14 +5,20 @@
         "marklogic_json": "pending",
         "marklogic_xml":  "pending",
         "mongodb_q_3_2":  "pending",
-        "postgresql":     "pending"
+	"spark_hdfs": "pending",
+        "spark_local": "pending"
     },
     "data": "olympics.data",
-    "NB": "The lack of alias on this field is important, as it triggers the
+
+    "NB": "Skipped for all connectors due to reduce/sort ordering bug.
+           Bug is fixed on @sellout's new mongo branch, but the fix breaks old mongo.
+
+           The lack of alias on this field is important, as it triggers the
            `select value` semantics of returning a value directly, not wrapped
            in a map.",
+
     "query": "select distinct discipline from olympics order by discipline",
-    "predicate": "equalsExactly",
+    "predicate": "exactly",
     "expected": ["Alpine Skiing",
                  "Biathlon",
                  "Bobsleigh",

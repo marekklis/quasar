@@ -18,7 +18,7 @@ package quasar.physical.mongodb.workflow
 
 import scalaz._
 
-sealed trait IdHandling
+sealed abstract class IdHandling
 final case object ExcludeId extends IdHandling
 final case object IncludeId extends IdHandling
 final case object IgnoreId extends IdHandling
@@ -35,4 +35,6 @@ object IdHandling {
   }
 
   implicit val show: Show[IdHandling] = Show.showFromToString
+
+  implicit val equal: Equal[IdHandling] = Equal.equalA
 }

@@ -16,7 +16,7 @@
 
 package quasar.physical
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.TernaryFunc
 import quasar.common.SortDir
 import quasar.javascript.Js
@@ -38,7 +38,7 @@ package object mongodb {
   type JavaScriptLog[A] = Writer[JavaScriptPrg, A]
 
   // TODO: actually give these funcs their own type
-  type JoinType = TernaryFunc
+  type MongoJoinType = TernaryFunc
 
   // TODO: parameterize over label (SD-512)
   def freshName: State[NameGen, BsonField.Name] =

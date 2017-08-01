@@ -16,11 +16,11 @@
 
 package quasar.sql
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import scalaz._
 
-sealed trait IsDistinct extends Product with Serializable
+sealed abstract class IsDistinct extends Product with Serializable
 
 final case object SelectDistinct extends IsDistinct
 final case object SelectAll extends IsDistinct

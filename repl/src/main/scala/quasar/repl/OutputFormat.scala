@@ -16,11 +16,11 @@
 
 package quasar.repl
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import scalaz._, Scalaz._
 
-sealed trait OutputFormat
+sealed abstract class OutputFormat
 object OutputFormat {
   case object Table extends OutputFormat
   case object Precise extends OutputFormat

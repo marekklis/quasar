@@ -16,7 +16,7 @@
 
 package quasar.fp
 
-import quasar.Predef._
+import slamdata.Predef._
 
 package object ski extends Serializable {
   // NB: Unicode has double-struck and bold versions of the letters, which might

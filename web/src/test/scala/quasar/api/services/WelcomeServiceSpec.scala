@@ -16,7 +16,7 @@
 
 package quasar.api.services
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.build
 
 import org.http4s.Request

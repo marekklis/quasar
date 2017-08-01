@@ -16,7 +16,7 @@
 
 package quasar.fp.binder
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import matryoshka.Recursive
 import scalaz._

@@ -16,7 +16,7 @@
 
 package quasar.api.services
 
-import quasar.Predef.{ String, Some }
+import slamdata.Predef.{ String, Some }
 import quasar.build
 
 import org.http4s.{StaticFile, MediaType, HttpService}

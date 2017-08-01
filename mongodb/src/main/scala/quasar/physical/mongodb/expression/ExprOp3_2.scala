@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb.expression
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._, Planner._
 import quasar.fp._
 import quasar.fp.ski._
@@ -40,10 +40,6 @@ object ExprOp3_2F {
   final case class $truncF[A](value: A)        extends ExprOp3_2F[A]
   final case class $ceilF[A](value: A)         extends ExprOp3_2F[A]
   final case class $floorF[A](value: A)        extends ExprOp3_2F[A]
-
-  // TODO: if this is needed, comment explaining why
-  def unapply[EX[_], A](ex: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[ExprOp3_2F[A]] =
-    I.prj(ex)
 
   implicit val equal: Delay[Equal, ExprOp3_2F] =
     new Delay[Equal, ExprOp3_2F] {
@@ -138,130 +134,49 @@ object ExprOp3_2F {
 object $sqrtF {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$sqrtF(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$sqrtF(value) => (value)
-    }
 }
 
 object $absF {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$absF(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$absF(value) => (value)
-    }
 }
 
 object $logF {
   def apply[EX[_], A](value: A, base: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$logF(value, base))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[(A, A)] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$logF(value, base) => (value, base)
-    }
 }
 
 object $log10F {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$log10F(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$log10F(value) => (value)
-    }
 }
 
 object $lnF {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$lnF(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$lnF(value) => (value)
-    }
 }
 
 object $powF {
   def apply[EX[_], A](value: A, exp: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$powF(value, exp))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[(A, A)] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$powF(value, base) => (value, base)
-    }
 }
 
 object $expF {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$expF(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$expF(value) => (value)
-    }
 }
 
 object $truncF {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$truncF(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$truncF(value) => (value)
-    }
 }
 
 object $ceilF {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$ceilF(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$ceilF(value) => (value)
-    }
 }
 
 object $floorF {
   def apply[EX[_], A](value: A)(implicit I: ExprOp3_2F :<: EX): EX[A] =
     I.inj(ExprOp3_2F.$floorF(value))
-  def unapply[EX[_], A](expr: EX[A])(implicit I: ExprOp3_2F :<: EX): Option[A] =
-    I.prj(expr) collect {
-      case ExprOp3_2F.$floorF(value) => (value)
-    }
-}
-
-object $sqrt {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $sqrtF.unapply(T.project(expr))
-}
-object $abs {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $absF.unapply(T.project(expr))
-}
-object $log {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[(T, T)] =
-    $logF.unapply(T.project(expr))
-}
-object $log10 {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $log10F.unapply(T.project(expr))
-}
-object $ln {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $lnF.unapply(T.project(expr))
-}
-object $pow {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[(T, T)] =
-    $powF.unapply(T.project(expr))
-}
-object $exp {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $expF.unapply(T.project(expr))
-}
-object $trunc {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $truncF.unapply(T.project(expr))
-}
-object $ceil {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $ceilF.unapply(T.project(expr))
-}
-object $floor {
-  def unapply[T, EX[_]](expr: T)(implicit T: Recursive.Aux[T, EX], EX: Functor[EX], I: ExprOp3_2F :<: EX): Option[T] =
-    $floorF.unapply(T.project(expr))
 }

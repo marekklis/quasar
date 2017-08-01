@@ -18,7 +18,7 @@ package quasar.physical.mongodb
 
 import scalaz.Scalaz._
 
-sealed trait MongoQueryModel
+sealed abstract class MongoQueryModel
 
 object MongoQueryModel {
   /** The oldest supported version. */

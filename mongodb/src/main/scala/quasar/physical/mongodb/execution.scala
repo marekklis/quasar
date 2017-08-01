@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.common.SortDir
 import quasar.fp._
 import quasar.physical.mongodb.accumulator._
@@ -89,6 +89,7 @@ private[mongodb] object execution {
     }
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def extractRange(pipeline: workflowtask.Pipeline):
       ((workflowtask.Pipeline, workflowtask.Pipeline),
         (Option[Long], Option[Long])) =

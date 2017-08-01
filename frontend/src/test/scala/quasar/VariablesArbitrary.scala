@@ -17,7 +17,7 @@
 package quasar
 
 import scala.Predef.$conforms
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.sql.ExprArbitrary
 
 import org.scalacheck.Arbitrary, Arbitrary.{arbitrary => arb}

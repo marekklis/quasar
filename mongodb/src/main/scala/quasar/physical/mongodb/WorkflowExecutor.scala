@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{NameGenerator => QNameGenerator}
 import quasar.connector.{EnvironmentError, EnvErrT}
 import quasar.contrib.scalaz.eitherT._
@@ -193,6 +193,7 @@ private[mongodb] abstract class WorkflowExecutor[F[_]: Monad, C] {
     }
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   private def execute0(wt: WorkflowTask, out: Collection)
     (implicit ev: WorkflowOpCoreF :<: WorkflowF)
     : N[Collection] = {

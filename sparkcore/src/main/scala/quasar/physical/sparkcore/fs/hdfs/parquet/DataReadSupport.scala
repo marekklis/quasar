@@ -16,8 +16,9 @@
 
 package quasar.physical.sparkcore.fs.hdfs.parquet
 
-import quasar.Predef._
-import quasar.Data
+import slamdata.Predef._
+import quasar.{Data, DataCodec}
+import quasar.fp.ski._
 
 import java.util.{Map => JMap}
 import java.time._
@@ -30,17 +31,17 @@ import org.apache.parquet.hadoop.api.ReadSupport
 import org.apache.parquet.hadoop.api.ReadSupport.ReadContext
 import org.apache.parquet.io.api._
 import org.apache.parquet.schema.{OriginalType, MessageType, GroupType}
-import scalaz._
+import scalaz._, Scalaz._
 
 /**
   * Parquet Mutable Dragons
-  * 
+  *
   * Due to the nature of java-like parquet-mr API we need to deal
   * with mutable data strucutres and "protocol" that requires
   * mutability (e.g see method getCurrentRecord())
-  * 
+  *
   * This is private to ParquetRDD as to not expose mutability
-  * 
+  *
   */
 @SuppressWarnings(Array(
   "org.wartremover.warts.Overloading",
@@ -78,11 +79,18 @@ private[parquet] class DataReadSupport extends ReadSupport[Data] with Serializab
     val converters: List[Converter] =
       schema.getFields().asScala.map(field => field.getOriginalType() match {
         case OriginalType.UTF8 => new DataStringConverter(field.getName(), save)
+        case OriginalType.JSON => new DataJsonConverter(field.getName(), save)
         case OriginalType.DATE => new DataDateConverter(field.getName(), save)
         case OriginalType.TIME_MILLIS => new DataTimeConverter(field.getName(), save)
+        case OriginalType.TIME_MICROS => new DataTimeMicroConverter(field.getName(), save)
         case OriginalType.TIMESTAMP_MILLIS => new DataTimestampConverter(field.getName(), save)
+        case OriginalType.TIMESTAMP_MICROS => new DataTimestampMicroConverter(field.getName(), save)
         case OriginalType.LIST =>
           new DataListConverter(field.asGroupType(), field.getName(), this)
+        case OriginalType.MAP =>
+          new DataMapConverter(field.asGroupType(), field.getName(), this)
+        case OriginalType.MAP_KEY_VALUE =>
+          new DataMapConverter(field.asGroupType(), field.getName(), this)
         case a if !field.isPrimitive() =>
           new DataGroupConverter(field.asGroupType(), Some((field.getName(), this)))
         case _ => new DataPrimitiveConverter(field.getName(), save)
@@ -118,6 +126,13 @@ private[parquet] class DataReadSupport extends ReadSupport[Data] with Serializab
 
   }
 
+  private object ListElement {
+    def unapply(d: Data): Option[Data] = d match {
+      case Data.Obj(lm) if lm.size === 1 && lm.isDefinedAt("element") => lm("element").some
+      case _ => none
+    }
+  }
+
   private class DataListConverter(
     val schema: GroupType,
     name: String,
@@ -134,17 +149,73 @@ private[parquet] class DataReadSupport extends ReadSupport[Data] with Serializab
     override def getConverter(fieldIndex: Int): Converter = converters.apply(fieldIndex)
     override def start(): Unit = {}
     override def end(): Unit = {
-      parent.save(name, Data.Arr(values.toList))
+      val normalize = values.toList.map {
+        case ListElement(el) => el
+        case o => o
+      }
+      parent.save(name, Data.Arr(normalize))
       values.clear()
     }
   }
 
+  private object MapKey {
+    def unapply(t: (String, Data)): Option[String] = t match {
+      case ("key" -> Data.Str(k)) => k.some
+      case _ => none
+    }
+  }
+
+  private object MapValue {
+    def unapply(t: (String, Data)): Option[Data] = t match {
+      case ("value" -> v) => v.some
+      case _ => none
+    }
+  }
+
+  private class DataMapConverter(
+    val schema: GroupType,
+    name: String,
+    parent: ConverterLike
+  ) extends GroupConverter with ConverterLike {
+
+    val values: MList[Data] = MList()
+
+    def save: (String, Data) => Unit = (name: String, data: Data) => {
+      values += data
+      ()
+    }
+
+    override def getConverter(fieldIndex: Int): Converter = converters.apply(fieldIndex)
+    override def start(): Unit = {}
+    override def end(): Unit = {
+      val mapEntry: Data => Option[(String, Data)] = {
+        case Data.Obj(lm) => lm.toList match {
+          case MapKey(k) :: MapValue(v) :: Nil => (k, v).some
+          case MapValue(v) :: MapKey(k) :: Nil => (k, v).some
+          case _ => none
+        }
+        case o => none
+      }
+      val cached = values.toList
+      val data = cached.traverse(mapEntry).cata(entries => Data.Obj(entries: _*), Data.Arr(cached))
+      parent.save(name, data)
+
+      values.clear()
+    }
+  }
 
   private class DataStringConverter(name: String, save: (String, Data) => Unit)
       extends PrimitiveConverter {
 
     override def addBinary(v: Binary): Unit =
       save(name, Data.Str(new String(v.getBytes())) : Data)
+  }
+
+  private class DataJsonConverter(name: String, save: (String, Data) => Unit)
+      extends PrimitiveConverter {
+
+    override def addBinary(v: Binary): Unit =
+      save(name, DataCodec.parse(new String(v.getBytes()))(DataCodec.Precise).fold(error => Data.NA, ι))
   }
 
   private class DataDateConverter(name: String, save: (String, Data) => Unit)
@@ -159,12 +230,23 @@ private[parquet] class DataReadSupport extends ReadSupport[Data] with Serializab
       save(name, Data.Timestamp(Instant.ofEpochMilli(v)) : Data)
   }
 
+  private class DataTimestampMicroConverter(name: String, save: (String, Data) => Unit)
+      extends PrimitiveConverter {
+    override def addLong(v: Long): Unit =
+      save(name, Data.Timestamp(Instant.ofEpochMilli(v / 1000)) : Data)
+  }
+
   private class DataTimeConverter(name: String, save: (String, Data) => Unit)
       extends PrimitiveConverter {
     override def addInt(v: Int): Unit =
-      save(name, Data.Time(LocalTime.ofNanoOfDay((v * 100).toLong)) : Data)
+      save(name, Data.Time(LocalTime.ofNanoOfDay(v.toLong * 1000000)) : Data)
   }
 
+  private class DataTimeMicroConverter(name: String, save: (String, Data) => Unit)
+      extends PrimitiveConverter {
+    override def addLong(v: Long): Unit =
+      save(name, Data.Time(LocalTime.ofNanoOfDay(v * 1000)) : Data)
+  }
 
   private class DataPrimitiveConverter(name: String, save: (String, Data) => Unit)
       extends PrimitiveConverter {

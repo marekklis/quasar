@@ -17,7 +17,7 @@
 package quasar
 
 import scala.Predef.$conforms
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp._
 import quasar.fp.ski._
 import quasar.specs2._, QuasarMatchers._

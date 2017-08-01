@@ -16,13 +16,13 @@
 
 package quasar.repl
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import quasar.effect.LiftedOps
 
 import scalaz._
 
-sealed trait ConsoleIO[A]
+sealed abstract class ConsoleIO[A]
 object ConsoleIO {
   final case class PrintLn(message: String) extends ConsoleIO[Unit]
 
@@ -30,7 +30,7 @@ object ConsoleIO {
   final class Ops[S[_]](implicit S: ConsoleIO :<: S)
     extends LiftedOps[ConsoleIO, S] {
 
-    def println(message: String): F[Unit] =
+    def println(message: String): FreeS[Unit] =
       lift(PrintLn(message))
   }
 

@@ -17,7 +17,7 @@
 package quasar.std
 
 import scala.Predef.$conforms
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, Func, Type}
 import quasar.DataArbitrary, DataArbitrary._
 

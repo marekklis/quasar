@@ -16,7 +16,7 @@
 
 package quasar.std
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Func, TypeArbitrary}
 import quasar.fp.ski._
 

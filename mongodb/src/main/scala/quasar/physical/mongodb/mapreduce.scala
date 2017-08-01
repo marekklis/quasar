@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.common.SortDir
 import quasar.javascript._
 
@@ -84,7 +84,7 @@ final case class MapReduce(
 object MapReduce {
   type Scope = ListMap[String, Bson]
 
-  sealed trait Action {
+  sealed abstract class Action {
     def nonAtomic: Option[Boolean]
   }
 

@@ -16,23 +16,20 @@
 
 package quasar.api.services.query
 
-import quasar.Predef.{ -> => _, _ }
-import quasar._, RenderTree.ops._
-import quasar.api._, ToQResponse.ops._
+import slamdata.Predef.{ -> => _, _ }
+import quasar._
+import quasar.api._, ToApiError.ops._
 import quasar.api.services._
-import quasar.common._
 import quasar.contrib.pathy._
-import quasar.fp.ski._
 import quasar.fp.numeric._
-import quasar.frontend._
 import quasar.fs._
+import quasar.fs.mount.Mounting
 import quasar.frontend.logicalplan.{LogicalPlan, LogicalPlanR}
 
 import argonaut._, Argonaut._
 import matryoshka._
 import matryoshka.data.Fix
 import org.http4s.dsl._
-import pathy.Path.posixCodec
 import scalaz._, Scalaz._
 
 object compile {
@@ -41,43 +38,34 @@ object compile {
   def service[S[_]](
     implicit
     Q: QueryFile.Ops[S],
-    M: ManageFile.Ops[S]
+    M: ManageFile.Ops[S],
+    S0: Mounting :<: S,
+    S1: FileSystemFailure :<: S
   ): QHttpService[S] = {
-    def phaseResultsResponse(prs: PhaseResults): Option[Json] =
-      prs.lastOption map {
-        case PhaseResult.Tree(name, value)   => value.asJson
-        case PhaseResult.Detail(name, value) => value.asJson
-      }
-
-    def noOutputError(lp: Fix[LogicalPlan]): ApiError =
-      ApiError.apiError(
-        InternalServerError withReason "No explain output for plan.",
-        "logicalplan" := lp.render)
+    def constantResponse(data: List[Data]): Json =
+      Json(
+        "type"  := "constant",
+        "value" := data.map(DataCodec.Precise.encode).unite)
 
     def explainQuery(
-      expr: Fix[sql.Sql],
+      scopedExpr: sql.ScopedExpr[Fix[sql.Sql]],
       vars: Variables,
       basePath: ADir,
       offset: Natural,
       limit: Option[Positive]
-    ): Free[S, QResponse[S]] =
-      respond(queryPlan(expr, vars, basePath, offset, limit)
-        .run.value.traverse[Free[S, ?], SemanticErrors, QResponse[S]](_.fold(
-          κ(Json(
-            "physicalPlan" -> jNull,
-            "inputs"       := List.empty[String]).toResponse[S].point[Free[S, ?]]),
-          lp => Q.explain(lp).run.run.map {
-            case (phases, \/-(_)) =>
-              phaseResultsResponse(phases)
-                .map(physicalPlanJson =>
-                  Json(
-                    "physicalPlan" := physicalPlanJson,
-                    "inputs"       := lpr.paths(lp).map(posixCodec.printPath)
-                  ).toResponse[S])
-                .toRightDisjunction(noOutputError(lp))
-                .toResponse[S]
-            case (_, -\/(fsErr)) => fsErr.toResponse[S]
-          })))
+    ): Free[S, ApiError \/ Json] =
+      resolveImports(scopedExpr, basePath).run.flatMap { block =>
+        block.fold(
+          semErr => semErr.toApiError.left.point[Free[S, ?]],
+          block =>
+            queryPlan(block, vars, basePath, offset, limit)
+              .run.value
+              .traverse(_.fold(
+                data => constantResponse(data).right[ApiError].point[Free[S, ?]],
+                lp => Q.explain(lp).run.value.map(_.bimap(_.toApiError, _.asJson))))
+              .map(_.valueOr(_.toApiError.left[Json])))
+
+      }
 
     QHttpService {
       case req @ GET -> _ :? Offset(offset) +& Limit(limit) =>

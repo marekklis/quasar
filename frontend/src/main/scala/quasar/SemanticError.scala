@@ -16,7 +16,8 @@
 
 package quasar
 
-import quasar.Predef._
+import slamdata.Predef._
+import quasar.contrib.pathy.ADir
 import quasar.sql._
 
 import matryoshka._
@@ -26,7 +27,7 @@ import pathy.Path, Path._
 import scalaz._, Scalaz._
 import shapeless.{Prism => _, _}
 
-sealed trait SemanticError {
+sealed abstract class SemanticError {
   def message: String
 }
 
@@ -39,8 +40,19 @@ object SemanticError {
     def message = s"The data '${data.shows}' did not fall within its expected domain" + hint.map(": " + _).getOrElse("")
   }
 
-  final case class FunctionNotFound(name: String) extends SemanticError {
-    def message = s"The function '$name' could not be found in the standard library"
+  final case class AmbiguousFunctionInvoke(name: CIName, from: List[(CIName,ADir)]) extends SemanticError {
+    def fullyQualifiedFuncs = from.map { case (name, dir) => posixCodec.printPath(dir) + name.value}
+    def message = {
+      val functions = fullyQualifiedFuncs.mkString(", ")
+      s"Function call `${name.shows}` is ambiguous because the following functions: $functions could be applied here"
+    }
+  }
+
+  final case class FunctionNotFound(name: CIName) extends SemanticError {
+    def message = s"The function '${name.shows}' could not be found in the standard library"
+  }
+  final case class InvalidFunctionDefinition(funcDef: FunctionDecl[Fix[Sql]], reason: String) extends SemanticError {
+    def message = s"The function '${funcDef.name.shows}' is invalid because: $reason"
   }
   final case class TypeError(expected: Type, actual: Type, hint: Option[String]) extends SemanticError {
     def message = s"Expected type ${expected.shows} but found ${actual.shows}" + hint.map(": " + _).getOrElse("")
@@ -66,8 +78,8 @@ object SemanticError {
   final case class MissingIndex(index: Int) extends SemanticError {
     def message = s"No element exists at array index '$index"
   }
-  final case class WrongArgumentCount(func: String, expected: Int, actual: Int) extends SemanticError {
-    def message = s"Wrong number of arguments for function '$func': expected $expected but found $actual"
+  final case class WrongArgumentCount(funcName: CIName, expected: Int, actual: Int) extends SemanticError {
+    def message = s"Wrong number of arguments for function '${funcName.shows}': expected $expected but found $actual"
   }
   final case class InvalidStringCoercion(str: String, expected: String \/ List[String]) extends SemanticError {
     def message = {
@@ -96,9 +108,38 @@ object SemanticError {
   }
 
   // TODO: Add other prisms when necessary (unless we enable the "No Any" wart first)
-  val genericError: Prism[SemanticError, String] =
-    Prism[SemanticError, String] {
-      case GenericError(msg) => Some(msg)
-      case _ => None
-    } (GenericError(_))
+  val genericError: Prism[SemanticError, String] = Prism.partial[SemanticError, String] {
+    case GenericError(msg) => msg
+  } (GenericError(_))
+
+  val unboundVariable: Prism[SemanticError, VarName] = Prism.partial[SemanticError, VarName] {
+    case UnboundVariable(varname) => varname
+  }(UnboundVariable(_))
+
+  val ambiguousFunctionInvoke: Prism[SemanticError, (CIName, List[(CIName, ADir)])] =
+    Prism.partial[SemanticError, (CIName, List[(CIName, ADir)])] {
+      case AmbiguousFunctionInvoke(name, from) => (name, from)
+    }(AmbiguousFunctionInvoke.tupled)
+
+  val invalidFunctionDefinition: Prism[SemanticError, (FunctionDecl[Fix[Sql]], String)] =
+    Prism.partial[SemanticError, (FunctionDecl[Fix[Sql]], String)] {
+      case InvalidFunctionDefinition(funcDef, reason) => (funcDef, reason)
+    }(InvalidFunctionDefinition.tupled)
+
+  val ambiguousReference: Prism[SemanticError, (Fix[Sql], List[SqlRelation[Unit]])] =
+    Prism.partial[SemanticError, (Fix[Sql], List[SqlRelation[Unit]])] {
+      case AmbiguousReference(node, relations) => (node, relations)
+    }(AmbiguousReference.tupled)
+
+  val duplicateAlias: Prism[SemanticError, String] = Prism.partial[SemanticError, String] {
+    case DuplicateAlias(name) => name
+  }(DuplicateAlias(_))
+
+  val wrongArgumentCount: Prism[SemanticError, (CIName, Int, Int)] = Prism.partial[SemanticError, (CIName, Int, Int)] {
+    case WrongArgumentCount(name, expected, found) => (name, expected, found)
+  }(WrongArgumentCount.tupled)
+
+  val compiledSubtableMissing: Prism[SemanticError, String] = Prism.partial[SemanticError, String] {
+    case CompiledSubtableMissing(name) => name
+  }(CompiledSubtableMissing(_))
 }

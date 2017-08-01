@@ -16,13 +16,13 @@
 
 package quasar.physical.marklogic.xquery
 
-import quasar.Predef._
-import quasar.physical.marklogic.xml._
+import slamdata.Predef._
 import quasar.physical.marklogic.xquery.syntax._
 
 import monocle.macros.Lenses
 import scalaz._
 import scalaz.syntax.show._
+import xml.name._
 
 @Lenses
 final case class NamespaceDecl(ns: Namespace) {

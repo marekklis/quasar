@@ -16,7 +16,7 @@
 
 package quasar.physical.marklogic.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data, TestConfig}
 import quasar.contrib.pathy._
 import quasar.contrib.scalaz.catchable._

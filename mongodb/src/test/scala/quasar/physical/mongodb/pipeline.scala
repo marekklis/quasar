@@ -17,7 +17,7 @@
 package quasar.physical.mongodb
 
 import quasar._
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.common.SortDir
 import quasar.physical.mongodb.accumulator._
 import quasar.physical.mongodb.expression._

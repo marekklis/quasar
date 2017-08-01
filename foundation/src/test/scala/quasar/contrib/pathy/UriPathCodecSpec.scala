@@ -16,7 +16,7 @@
 
 package quasar.contrib.pathy
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import org.specs2.specification.core._
 import pathy.Path._

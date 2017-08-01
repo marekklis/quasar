@@ -16,12 +16,11 @@
 
 package quasar.physical.couchbase
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Data => QData}
-import quasar.common.SortDir, SortDir._
+import quasar.common.{JoinType, SortDir}, SortDir._
 import quasar.DataArbitrary._
 import quasar.physical.couchbase.N1QL.{Eq, Id, Split, _}, Case._, Select.{Value, _}
-import quasar.qscript.{LeftOuter, Inner}
 
 import scala.Predef.$conforms
 
@@ -61,7 +60,7 @@ trait N1QLArbitrary {
       arb[Id[A]]         ⊛
       arb[Option[Id[A]]] ⊛
       arb[A]             ⊛
-      Gen.oneOf(LeftOuter.left, Inner.right)
+      Gen.oneOf(JoinType.LeftOuter.left, JoinType.Inner.right)
      )(
       LookupJoin(_, _, _, _))
     )
@@ -94,7 +93,7 @@ trait N1QLArbitrary {
   implicit def arbN1QL[A: Arbitrary]: Arbitrary[N1QL[A]] = Arbitrary(Gen.oneOf(
     arb[QData]                         ∘ (Data[A](_)),
     arb[String]                        ∘ (Id[A](_)),
-    arb[Map[A, A]]                     ∘ (Obj(_)),
+    arb[List[(A, A)]]                  ∘ (Obj(_)),
     arb[List[A]]                       ∘ (Arr(_)),
     arb[A]                             ∘ (Time(_)),
     arb[A]                             ∘ (Timestamp(_)),

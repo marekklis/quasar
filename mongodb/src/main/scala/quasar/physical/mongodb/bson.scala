@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fp._
 import quasar.javascript._
 import quasar.jscore, jscore.JsFn
@@ -34,7 +34,7 @@ import scalaz._, Scalaz._
  * A type-safe ADT for Mongo's native data format. Note that this representation
  * is not suitable for efficiently storing large quantities of data.
  */
-sealed trait Bson extends Product with Serializable {
+sealed abstract class Bson extends Product with Serializable {
   // TODO: Once Bson is fixpoint, this should be an algebra:
   //       BsonF[BsonValue] => BsonValue
   def repr: BsonValue
@@ -71,6 +71,21 @@ object Bson {
     def repr = new BsonDouble(value)
 
     def toJs = Js.Num(value, true)
+
+    override def equals(that: Any): Boolean = that match {
+      case Dec(value2) =>
+        (value.isNaN && value2.isNaN) ||
+        (value.isInfinity && value > 0 && value2.isInfinity && value2 > 0) ||
+        (value.isInfinity && value < 0 && value2.isInfinity && value2 < 0) ||
+        (value ≟ value2)
+      case _ => false
+    }
+
+    override def hashCode =
+      if (value.isNaN) "NaN".hashCode
+      else if (value.isInfinity && value > 0) "+inf".hashCode
+      else if (value.isInfinity && value < 0) "-inf".hashCode
+      else value.hashCode
   }
 
   val _dec = Prism.partial[Bson, Double] { case Bson.Dec(v) => v } (Bson.Dec(_))
@@ -249,7 +264,7 @@ object BsonType {
   final case object MaxKey extends BsonType(127)
 }
 
-sealed trait BsonField {
+sealed abstract class BsonField {
   def asText  : String
   def asField : String = "$" + asText
   def asVar   : String = "$$" + asText
@@ -296,6 +311,7 @@ sealed trait BsonField {
         case Name(v)  => JsFn(JsFn.defaultName, jscore.Access(acc(jscore.Ident(JsFn.defaultName)), jscore.Literal(Js.Str(v))))
       })
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   override def hashCode = this match {
     case Name(v) => v.hashCode
     case Path(v) if (v.tail.length ≟ 0) => v.head.hashCode
@@ -310,7 +326,7 @@ sealed trait BsonField {
 }
 
 object BsonField {
-  sealed trait Root
+  sealed abstract class Root
   final case object Root extends Root
 
   def apply(v: NonEmptyList[BsonField.Name]): BsonField = v match {

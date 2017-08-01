@@ -16,7 +16,7 @@
 
 package quasar.std
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._, SemanticError._
 import quasar.fp._
 import quasar.frontend.logicalplan.{LogicalPlan => LP, _}
@@ -423,6 +423,7 @@ trait StructuralLib extends Library {
       }
 
     // Note: signature does not match VirtualFunc
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def unapply[T](t: LP[T])(implicit T: Recursive.Aux[T, LP]):
         Option[List[(T, T)]] =
       t match {
@@ -438,6 +439,7 @@ trait StructuralLib extends Library {
         .reduceLeftOption((x, y) => ArrayConcat(x.embed, y.embed))
         .getOrElse(Constant(Data.Arr(Nil)))
 
+    @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
     def unapply[T](t: T)(implicit T: Recursive.Aux[T, LP]): Option[List[T]] =
       t.project match {
         case InvokeUnapply(MakeArray, Sized(x))      => Some(x :: Nil)
@@ -446,6 +448,7 @@ trait StructuralLib extends Library {
       }
 
     object Attr {
+      @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
       def unapply[A](t: Cofree[LP, A]): Option[List[Cofree[LP, A]]] =
         t.tail match {
           case InvokeUnapply(MakeArray, Sized(x))      => Some(x :: Nil)

@@ -16,7 +16,7 @@
 
 package quasar.contrib
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import _root_.scalaz._, Leibniz._, Scalaz._
 import _root_.shapeless._

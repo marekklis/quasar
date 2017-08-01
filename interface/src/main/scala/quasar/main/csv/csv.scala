@@ -16,7 +16,7 @@
 
 package quasar.csv
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import com.github.tototoshi.csv._
 import scala.math.Ordering

@@ -17,7 +17,7 @@
 package quasar.javascript
 
 import scala.Predef.$conforms
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.{Terminal, RenderTree}
 
 import scalaz._, Scalaz._
@@ -45,14 +45,14 @@ import scalaz._, Scalaz._
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-sealed trait Js extends Product with Serializable {
+sealed abstract class Js extends Product with Serializable {
   def pprint(indent: Int): String = JavascriptPrinter.print(this, indent)
 }
 
 object Js {
-  sealed trait Stmt extends Js
-  sealed trait Expr extends Stmt
-  sealed trait Lit extends Expr
+  sealed abstract class Stmt extends Js
+  sealed abstract class Expr extends Stmt
+  sealed abstract class Lit extends Expr
 
   final case class Bool(value: Boolean) extends Lit
   final case class Str(value: String) extends Lit
@@ -82,7 +82,7 @@ object Js {
   final case class While(cond: Expr, body: Stmt) extends Stmt
   final case class For(init: List[Stmt], check: Expr, update: List[Stmt], body: Stmt) extends Stmt
   final case class ForIn(ident: Ident, coll: Expr, body: Stmt) extends Stmt
-  sealed trait Switchable extends Stmt
+  sealed abstract class Switchable extends Stmt
   final case class Case(const: List[Expr], body: Stmt) extends Switchable
   final case class Default(body: Stmt) extends Switchable
   final case class Switch(expr: Expr, cases: List[Case], default: Option[Default]) extends Stmt
@@ -130,6 +130,7 @@ private object JavascriptPrinter {
     case _ => ast
   }
 
+  @SuppressWarnings(Array("org.wartremover.warts.Recursion"))
   def print(ast: Js, indent: Int): String = {
     def ind(c: Int) = " " * (indent + c)
     def p(ast: Js) = print(ast, indent)

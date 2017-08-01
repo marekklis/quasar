@@ -16,7 +16,7 @@
 
 package quasar.concurrent
 
-import quasar.Predef._
+import slamdata.Predef._
 import java.util.concurrent.{Executors, ThreadFactory}
 import java.util.concurrent.atomic.AtomicInteger
 

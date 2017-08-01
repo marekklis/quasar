@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb.fs
 
-import quasar.Predef.{Boolean, Vector}
+import slamdata.Predef.{Boolean, Vector}
 import quasar.Data
 import quasar.fs.DataCursor
 import quasar.physical.mongodb._

@@ -17,7 +17,7 @@
 package quasar
 
 import scala.Predef.$conforms
-import quasar.Predef._
+import slamdata.Predef._
 
 import org.scalacheck.{Gen, Arbitrary, Shrink}
 import scalaz._, Scalaz._

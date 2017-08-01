@@ -16,7 +16,7 @@
 
 package quasar.physical.mongodb
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.javascript.Js._
 import quasar.physical.mongodb.execution._
 import quasar.physical.mongodb.workflowtask._

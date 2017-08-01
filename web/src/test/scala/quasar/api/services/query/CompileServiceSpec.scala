@@ -16,13 +16,14 @@
 
 package quasar.api.services.query
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.fs._, InMemory.InMemState
 
 import argonaut.{Json => AJson}
 import org.http4s._
 import org.http4s.argonaut._
 import pathy.Path._, posixCodec._
+import pathy.scalacheck.AlphaCharacters
 import rapture.json._, jsonBackends.json4s._, patternMatching.exactObjects._
 import scalaz._, Scalaz._
 
@@ -39,8 +40,9 @@ class CompileServiceSpec extends quasar.Qspec with FileSystemFixture {
         query = Some(Query(selectAll(file1(filesystem.filename)))),
         state = filesystem.state,
         status = Status.Ok,
-        response = json => Json.parse(json.nospaces) must beLike { case json""" { "inputs": $inputs, "physicalPlan": $physicalPlan }""" =>
-          inputs.as[List[String]] must_=== List(filesystem.file).map(printPath)
+        response = json => Json.parse(json.nospaces) must beLike {
+          case json"""{ "type": "in-memory", "inputs": $inputs, "physicalPlan": $physicalPlan }""" =>
+            inputs.as[List[String]] must_=== List(filesystem.file).map(printPath)
         }
       )
     }
@@ -53,8 +55,9 @@ class CompileServiceSpec extends quasar.Qspec with FileSystemFixture {
         query = Some(Query(query,varNameAndValue = Some((varName.value, var_.toString)))),
         state = filesystem.state,
         status = Status.Ok,
-        response = json => Json.parse(json.nospaces) must beLike { case json""" { "inputs": $inputs, "physicalPlan": $physicalPlan }""" =>
-          inputs.as[List[String]] must_=== List(filesystem.file).map(printPath)
+        response = json => Json.parse(json.nospaces) must beLike {
+          case json"""{ "type": "in-memory", "inputs": $inputs, "physicalPlan": $physicalPlan }""" =>
+            inputs.as[List[String]] must_=== List(filesystem.file).map(printPath)
         }
       )
     }
@@ -62,11 +65,15 @@ class CompileServiceSpec extends quasar.Qspec with FileSystemFixture {
     "return all inputs of a query" >> {
       get[AJson](compileService)(
         path = rootDir </> dir("foo"),
-        query = Some(Query("""SELECT c1.user, c2.type FROM `/users` as c1 JOIN `events` as c2 ON c1._id = c2.userId""")),
+        query = Some(Query("""SELECT c1.user, c2.type FROM `/users` as c1 JOIN `events` as c2 ON c1.`_id` = c2.userId""")),
         state = InMemState.empty,
         status = Status.Ok,
-        response = json => Json.parse(json.nospaces) must beLike { case json""" { "inputs": $inputs, "physicalPlan": $physicalPlan }""" =>
-          inputs.as[List[String]] must_=== List(rootDir </> file("users"), rootDir </> dir("foo") </> file("events")).map(printPath)
+        response = json => Json.parse(json.nospaces) must beLike {
+          case json"""{ "type": "in-memory", "inputs": $inputs, "physicalPlan": $physicalPlan }""" =>
+            ISet.fromFoldable(inputs.as[List[String]]) must_=== ISet.fromFoldable(List(
+              rootDir </> file("users"),
+              rootDir </> dir("foo") </> file("events")
+            ).map(printPath))
         }
       )
     }
@@ -77,7 +84,7 @@ class CompileServiceSpec extends quasar.Qspec with FileSystemFixture {
         query = Some(Query("4 + 3")),
         state = InMemState.empty,
         status = Status.Ok,
-        response = json => Json.parse(json.nospaces) must_=== json""" { "inputs": [], "physicalPlan": null }""")
+        response = json => Json.parse(json.nospaces) must_=== json""" { "type": "constant", "value": [7] }""")
     }
 
   }

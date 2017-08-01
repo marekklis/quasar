@@ -16,7 +16,7 @@
 
 package quasar.effect
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar.contrib.scalaz.MonadReader_
 
 import java.util.UUID

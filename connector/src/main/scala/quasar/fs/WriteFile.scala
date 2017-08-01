@@ -16,7 +16,7 @@
 
 package quasar.fs
 
-import quasar.Predef._
+import slamdata.Predef._
 import quasar._, RenderTree.ops._
 import quasar.contrib.pathy._
 import quasar.effect.LiftedOps
@@ -26,7 +26,7 @@ import monocle.Iso
 import scalaz._, Scalaz._
 import scalaz.stream._
 
-sealed trait WriteFile[A]
+sealed abstract class WriteFile[A]
 
 object WriteFile {
   final case class WriteHandle(file: AFile, id: Long)
@@ -52,9 +52,8 @@ object WriteFile {
 
   final class Ops[S[_]](implicit val unsafe: Unsafe[S]) {
     import FileSystemError._, PathError._
-    import ManageFile.MoveSemantics
 
-    type F[A]    = unsafe.F[A]
+    type F[A]    = unsafe.FreeS[A]
     type M[A]    = unsafe.M[A]
     type G[E, A] = EitherT[F, E, A]
 
@@ -83,7 +82,7 @@ object WriteFile {
           .map(PartialWrite)
 
       val dropPartialWrites =
-        process1.filter[FileSystemError](e => !partialWrite.isMatching(e))
+        process1.filter[FileSystemError](partialWrite.isEmpty)
 
       // NB: We don't use `through` as we want to ensure the `Open` from
       //     `appendChannel` happens even if the src process never emits.
@@ -215,14 +214,14 @@ object WriteFile {
                             : Process[M, FileSystemError] = {
 
       def cleanupTmp(tmp: AFile)(t: Throwable): Process[M, Nothing] =
-        Process.eval_(MF.delete(tmp)).causedBy(Cause.Error(t))
+        Process.eval_(ensureAbsent(tmp)).causedBy(Cause.Error(t))
 
       MF.tempFile(dst).liftM[Process] flatMap { tmp =>
         appendChunked(tmp, src)
           .map(some).append(Process.emit(none))
           .take(1)
           .flatMap(_.cata(
-            werr => MF.delete(tmp).as(werr).liftM[Process],
+            werr => ensureAbsent(tmp).as(werr).liftM[Process],
             Process.eval_(MF.moveFile(tmp, dst, sem))))
           .onFailure(cleanupTmp(tmp))
       }
@@ -234,10 +233,12 @@ object WriteFile {
       for {
         tmp  <- MF.tempFile(dst)
         errs <- appendThese(tmp, data)
-        _    <- if (errs.isEmpty) MF.moveFile(tmp, dst, sem)
-                else MF.delete(tmp)
+        _    <- if (errs.isEmpty) MF.moveFile(tmp, dst, sem) else ensureAbsent(tmp)
       } yield errs
     }
+
+    private def ensureAbsent(f: AFile)(implicit MF: ManageFile.Ops[S]): M[Unit] =
+      MF.delete(f).run.void.liftM[FileSystemErrT]
   }
 
   object Ops {
@@ -251,7 +252,7 @@ object WriteFile {
   final class Unsafe[S[_]](implicit S: WriteFile :<: S)
     extends LiftedOps[WriteFile, S] {
 
-    type M[A] = FileSystemErrT[F, A]
+    type M[A] = FileSystemErrT[FreeS, A]
 
     /** Returns a write handle for the specified file which may be used to
       * append data to the file it represents, creating it if necessary.
@@ -268,11 +269,11 @@ object WriteFile {
       * it fail, any such failures will be returned in the output `Vector`
       * An empty `Vector` means the entire chunk was written successfully.
       */
-    def write(h: WriteHandle, chunk: Vector[Data]): F[Vector[FileSystemError]] =
+    def write(h: WriteHandle, chunk: Vector[Data]): FreeS[Vector[FileSystemError]] =
       lift(Write(h, chunk))
 
     /** Close the write handle, freeing any resources it was using. */
-    def close(h: WriteHandle): F[Unit] =
+    def close(h: WriteHandle): FreeS[Unit] =
       lift(Close(h))
   }
 

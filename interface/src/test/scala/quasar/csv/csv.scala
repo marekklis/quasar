@@ -16,7 +16,7 @@
 
 package quasar.csv
 
-import quasar.Predef._
+import slamdata.Predef._
 
 import scalaz._, Scalaz._
 
